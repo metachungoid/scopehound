@@ -52,12 +52,17 @@ _UBSAN = re.compile(
     r"^(?P<location>[^:\n]+:\d+:\d+): runtime error: (?P<summary>[^\n]+)$",
     re.MULTILINE,
 )
+_LIBFUZZER_ARTIFACT = re.compile(
+    r"^\s*(?:Test unit written to|artifact(?:_path)?\s*[:=])\s*[\"']?(?P<path>[^\s\"']+)",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 def parse_sanitizer_output(output: str, artifact: Path | None = None) -> tuple[Finding, ...]:
     if not output.strip():
         return ()
     findings: dict[str, Finding] = {}
+    artifact_name = artifact.name if artifact else _infer_artifact(output)
     blocks = _asan_blocks(output)
     for block in blocks:
         error = _ASAN_ERROR.search(block)
@@ -78,7 +83,7 @@ def parse_sanitizer_output(output: str, artifact: Path | None = None) -> tuple[F
             function=function,
             stack=frames,
             fingerprint=fingerprint,
-            artifact=artifact.name if artifact else None,
+            artifact=artifact_name,
             raw_output=block.strip(),
         )
 
@@ -95,7 +100,7 @@ def parse_sanitizer_output(output: str, artifact: Path | None = None) -> tuple[F
             function="unknown",
             stack=(),
             fingerprint=fingerprint,
-            artifact=artifact.name if artifact else None,
+            artifact=artifact_name,
             raw_output=match.group(0),
         )
     return tuple(findings[key] for key in sorted(findings))
@@ -130,3 +135,11 @@ def _clean_kind(kind: str) -> str:
 def _fingerprint(sanitizer: str, kind: str, location: str, function: str, frames: tuple[str, ...]) -> str:
     source = "|".join((sanitizer, kind, location, function, *frames[:3]))
     return hashlib.sha256(source.encode("utf-8")).hexdigest()[:20]
+
+
+def _infer_artifact(output: str) -> str | None:
+    match = _LIBFUZZER_ARTIFACT.search(output)
+    if not match:
+        return None
+    value = match.group("path").rstrip(",;)")
+    return Path(value).name or None

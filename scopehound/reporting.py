@@ -20,6 +20,7 @@ def render_report(
     technical_details = ""
     if finding:
         stack = "".join(f"  - `{frame}`\n" for frame in finding.stack)
+        evidence = _code_block(finding.raw_output) if finding.raw_output.strip() else "(not captured)"
         technical_details = f"""## Parsed technical finding
 
 - Sanitizer: {finding.sanitizer}
@@ -31,6 +32,11 @@ def render_report(
 - Reproducibility status: `{finding.reproducibility}`
 - Stack:
 {stack}"""
+        technical_details += f"""
+- Raw sanitizer evidence:
+
+{evidence}
+"""
     return f"""---
 human_review_required: true
 target: {manifest.target.name}
@@ -96,3 +102,13 @@ def write_report(text: str, output: Path) -> None:
         raise ScopeHoundError(
             "output_failed", f"cannot write report {output}: {error}"
         ) from error
+
+
+def _code_block(text: str, limit: int = 12_000) -> str:
+    excerpt = text[:limit]
+    if len(text) > limit:
+        excerpt += "\n[raw sanitizer output truncated]"
+    fence = "```"
+    while fence in excerpt:
+        fence += "`"
+    return f"{fence}text\n{excerpt}\n{fence}"

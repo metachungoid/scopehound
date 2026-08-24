@@ -157,6 +157,43 @@ class CliTests(unittest.TestCase):
         self.assertEqual(payload[0]["kind"], "heap-use-after-free")
         self.assertEqual(payload[0]["artifact"], "crash-001")
 
+    def test_report_selects_finding_for_requested_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_path = self._write_manifest(root, valid_manifest_data())
+            artifact = root / "crash-002"
+            artifact.write_bytes(b"boom")
+            findings_path = root / "findings.json"
+            findings_path.write_text(
+                json.dumps([
+                    {
+                        "sanitizer": "AddressSanitizer", "kind": "heap-use-after-free",
+                        "summary": "first", "location": "first.c:1:1", "function": "first",
+                        "stack": [], "fingerprint": "first", "artifact": "crash-001",
+                        "raw_output": "first evidence", "reproducibility": "unverified",
+                    },
+                    {
+                        "sanitizer": "AddressSanitizer", "kind": "heap-buffer-overflow",
+                        "summary": "second", "location": "second.c:2:2", "function": "second",
+                        "stack": [], "fingerprint": "second", "artifact": "crash-002",
+                        "raw_output": "second evidence", "reproducibility": "reproduced",
+                    },
+                ]),
+                encoding="utf-8",
+            )
+            report_path = root / "report.md"
+
+            code, _, _ = self._run(
+                "report", "--manifest", str(manifest_path), "--artifact", str(artifact),
+                "--findings", str(findings_path), "--output", str(report_path),
+            )
+
+            report = report_path.read_text(encoding="utf-8")
+
+        self.assertEqual(code, 0)
+        self.assertIn("second.c:2:2", report)
+        self.assertNotIn("first.c:1:1", report)
+
     def test_discover_command_writes_harness_candidates(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

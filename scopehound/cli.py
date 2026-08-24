@@ -238,7 +238,8 @@ def _dispatch(args: argparse.Namespace) -> int:
         finding = None
         if args.findings:
             parsed = load_findings(args.findings)
-            finding = parsed[0] if parsed else None
+            matching = [item for item in parsed if item.artifact == artifact.path.name]
+            finding = matching[0] if matching else (parsed[0] if len(parsed) == 1 else None)
         report = render_report(manifest, artifact, artifact.path.name, finding)
         write_report(report, args.output)
         _success(args, {"output": str(args.output), "sha256": artifact.sha256}, f"report draft: {args.output}")

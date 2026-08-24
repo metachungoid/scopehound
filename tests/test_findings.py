@@ -45,6 +45,13 @@ class FindingsTests(unittest.TestCase):
         self.assertEqual(findings[0].kind, "signed integer overflow")
         self.assertEqual(findings[0].location, "src/value.c:88:12")
 
+    def test_infers_libfuzzer_artifact_name_from_sanitizer_output(self) -> None:
+        log = "Test unit written to ./crash-042\n" + ASAN_LOG
+
+        findings = parse_sanitizer_output(log)
+
+        self.assertEqual(findings[0].artifact, "crash-042")
+
     def test_write_findings_is_machine_readable_and_stable(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "findings.json"

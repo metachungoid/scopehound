@@ -44,7 +44,7 @@ class ReportingTests(unittest.TestCase):
             "- [ ] Search for duplicate reports and root causes",
             "- [ ] Reproduce against the latest eligible revision",
             "AddressSanitizer", "heap-buffer-overflow", "/src/lib/parser.c:142:9",
-            "parse_packet", "abc123", "reproduced",
+            "parse_packet", "abc123", "reproduced", "sanitizer output",
         )
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):
