@@ -28,7 +28,7 @@ class CliTests(unittest.TestCase):
                 main(["--help"])
 
         self.assertEqual(raised.exception.code, 0)
-        for command in ("validate", "score", "prepare", "build", "fuzz", "discover", "findings", "triage", "report"):
+        for command in ("validate", "score", "prepare", "build", "fuzz", "discover", "generate-harnesses", "findings", "triage", "report"):
             self.assertIn(command, output.getvalue())
 
     def test_validate_supports_text_and_json_output(self) -> None:
@@ -166,6 +166,20 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(payload[0]["entrypoint"], "LLVMFuzzerTestOneInput")
+
+    def test_generate_harnesses_command_writes_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            (root / "parser.h").write_text(
+                "int parse_packet(const unsigned char *data, size_t size);", encoding="utf-8"
+            )
+            output = root / "generated"
+
+            code, _, _ = self._run(
+                "generate-harnesses", "--repo", str(root), "--output-dir", str(output)
+            )
+            self.assertEqual(code, 0)
+            self.assertTrue((output / "parse_packet_fuzzer.cc").exists())
 
     @staticmethod
     def _write_manifest(root: Path, data: dict[str, object]) -> Path:

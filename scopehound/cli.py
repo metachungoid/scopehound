@@ -10,6 +10,7 @@ from typing import Sequence
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import load_findings, parse_sanitizer_output, write_findings
 from scopehound.discovery import discover_harnesses, write_harnesses
+from scopehound.harness import generate_harnesses, write_harnesses as write_generated_harnesses
 from scopehound.manifest import Manifest, load_manifest
 from scopehound.reporting import render_report, write_report
 from scopehound.runner import (
@@ -64,6 +65,11 @@ def build_parser() -> argparse.ArgumentParser:
     discover.add_argument("--repo", required=True, type=Path)
     discover.add_argument("--output", required=True, type=Path)
     _json_argument(discover)
+
+    generated = subparsers.add_parser("generate-harnesses", help="generate candidate libFuzzer harnesses")
+    generated.add_argument("--repo", required=True, type=Path)
+    generated.add_argument("--output-dir", required=True, type=Path)
+    _json_argument(generated)
 
     findings = subparsers.add_parser("findings", help="extract structured sanitizer findings from a log")
     findings.add_argument("--log", required=True, type=Path)
@@ -167,6 +173,12 @@ def _dispatch(args: argparse.Namespace) -> int:
         candidates = discover_harnesses(args.repo)
         write_harnesses(candidates, args.output)
         _success(args, {"count": len(candidates), "output": str(args.output)}, f"discovered {len(candidates)} harness candidates -> {args.output}")
+        return 0
+
+    if args.command == "generate-harnesses":
+        candidates = generate_harnesses(args.repo)
+        write_generated_harnesses(candidates, args.output_dir)
+        _success(args, {"count": len(candidates), "output": str(args.output_dir)}, f"generated {len(candidates)} harness candidates -> {args.output_dir}")
         return 0
 
     if args.command == "triage":

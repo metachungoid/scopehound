@@ -118,6 +118,19 @@ The discovery report prioritizes files containing `LLVMFuzzerTestOneInput`,
 `FUZZ_TEST`, or `DEFINE_PROTO_FUZZER`. It identifies candidates; it does not
 pretend that a candidate is buildable until the project build validates it.
 
+If a checkout has no existing harness, generate review-only libFuzzer
+candidates from buffer-and-length APIs:
+
+```bash
+scopehound generate-harnesses \
+  --repo .scopehound/targets/example-parser/repo \
+  --output-dir .scopehound/targets/example-parser/generated-harnesses
+```
+
+Generated sources are marked `needs_build_validation` and must be reviewed and
+built against the target before fuzzing. ScopeHound does not assume that a
+declaration is safe, reachable, or ABI-compatible merely because it matches.
+
 Deduplicate byte-identical artifacts and write stable JSON:
 
 ```bash
@@ -162,6 +175,7 @@ the report.
 - `build`: plan or run the manifest's build command
 - `fuzz`: plan or run the bounded local fuzz command
 - `discover`: find existing C/C++ fuzz harnesses in a checkout
+- `generate-harnesses`: generate review-only libFuzzer harness candidates
 - `findings`: parse ASan/UBSan logs into structured findings
 - `triage`: hash and group local artifacts
 - `report`: render a human-review Markdown disclosure draft
