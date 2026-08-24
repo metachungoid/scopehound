@@ -1,0 +1,6 @@
+.worktrees/
+__pycache__/
+*.py[cod]
+.venv/
+.scopehound/
+*.egg-info/
