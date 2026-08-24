@@ -131,6 +131,22 @@ Generated sources are marked `needs_build_validation` and must be reviewed and
 built against the target before fuzzing. ScopeHound does not assume that a
 declaration is safe, reachable, or ABI-compatible merely because it matches.
 
+After preparing the authorized checkout, syntax-check those candidates without
+linking or executing them:
+
+```bash
+scopehound validate-harnesses \
+  --manifest target.json \
+  --workspace .scopehound \
+  --harnesses-dir .scopehound/targets/example-parser/generated-harnesses \
+  --output .scopehound/targets/example-parser/harness-validation.json \
+  --execute
+```
+
+The validation record distinguishes `planned`, `syntax_valid`, and
+`syntax_invalid`. A successful syntax check is only a compiler-front-end check;
+it does not establish linkability, reachability, or security impact.
+
 Deduplicate byte-identical artifacts and write stable JSON:
 
 ```bash
@@ -176,6 +192,7 @@ the report.
 - `fuzz`: plan or run the bounded local fuzz command
 - `discover`: find existing C/C++ fuzz harnesses in a checkout
 - `generate-harnesses`: generate review-only libFuzzer harness candidates
+- `validate-harnesses`: syntax-check generated harnesses under an authorized checkout
 - `findings`: parse ASan/UBSan logs into structured findings
 - `triage`: hash and group local artifacts
 - `report`: render a human-review Markdown disclosure draft

@@ -66,6 +66,7 @@ The package is divided into focused modules:
 - `runner`: construct and execute bounded subprocesses.
 - `triage`: hash artifacts, group duplicates, and write triage metadata.
 - `reporting`: render human-reviewable Markdown reports.
+- `validation`: syntax-check generated harness candidates and record status.
 - `cli`: expose stable subcommands and JSON output.
 
 All state lives under a user-selected workspace, defaulting to

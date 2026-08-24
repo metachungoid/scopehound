@@ -23,6 +23,7 @@ from scopehound.runner import (
 )
 from scopehound.scoring import score_opportunity
 from scopehound.triage import inspect_artifact, triage_artifacts, write_triage
+from scopehound.validation import validate_harnesses, write_validation
 from scopehound.workspace import Workspace
 
 
@@ -70,6 +71,17 @@ def build_parser() -> argparse.ArgumentParser:
     generated.add_argument("--repo", required=True, type=Path)
     generated.add_argument("--output-dir", required=True, type=Path)
     _json_argument(generated)
+
+    validation = subparsers.add_parser(
+        "validate-harnesses", help="syntax-check generated libFuzzer harnesses"
+    )
+    _manifest_argument(validation)
+    _workspace_argument(validation)
+    validation.add_argument("--harnesses-dir", required=True, type=Path)
+    validation.add_argument("--output", required=True, type=Path)
+    validation.add_argument("--compiler", default="c++")
+    _execute_argument(validation)
+    _json_argument(validation)
 
     findings = subparsers.add_parser("findings", help="extract structured sanitizer findings from a log")
     findings.add_argument("--log", required=True, type=Path)
@@ -181,6 +193,38 @@ def _dispatch(args: argparse.Namespace) -> int:
         _success(args, {"count": len(candidates), "output": str(args.output_dir)}, f"generated {len(candidates)} harness candidates -> {args.output_dir}")
         return 0
 
+    if args.command == "validate-harnesses":
+        manifest = load_manifest(args.manifest)
+        workspace = Workspace(args.workspace)
+        output = _target_path(workspace, manifest.target.name, args.output)
+        results = validate_harnesses(
+            manifest,
+            workspace,
+            args.harnesses_dir,
+            args.compiler,
+            execute=args.execute,
+        )
+        write_validation(results, output)
+        invalid = sum(result.status == "syntax_invalid" for result in results)
+        if invalid:
+            raise ScopeHoundError(
+                "command_failed",
+                f"{invalid} generated harnesses failed syntax validation; see {output}",
+            )
+        _success(
+            args,
+            {
+                "count": len(results),
+                "output": str(output),
+                "statuses": {
+                    status: sum(item.status == status for item in results)
+                    for status in sorted({item.status for item in results})
+                },
+            },
+            f"validated {len(results)} generated harnesses -> {output}",
+        )
+        return 0
+
     if args.command == "triage":
         result = triage_artifacts(args.artifacts)
         write_triage(result, args.output)
@@ -272,3 +316,15 @@ def _execute_argument(parser: argparse.ArgumentParser) -> None:
 
 def _json_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+
+
+def _target_path(workspace: Workspace, target_name: str, requested: Path) -> Path:
+    target = workspace.target_dir(target_name)
+    resolved = requested.expanduser().resolve()
+    try:
+        resolved.relative_to(target)
+    except ValueError as error:
+        raise ScopeHoundError(
+            "unsafe_path", "output must remain inside the target workspace"
+        ) from error
+    return resolved

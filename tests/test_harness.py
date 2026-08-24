@@ -31,6 +31,7 @@ class HarnessTests(unittest.TestCase):
         self.assertIn("LLVMFuzzerTestOneInput", candidates[0].source)
         self.assertIn("parse_packet(", candidates[0].source)
         self.assertIn("size", candidates[0].source)
+        self.assertIn('#include "parser.h"', candidates[0].source)
         self.assertIn("reinterpret_cast<const unsigned char *>(data)", candidates[0].source)
         self.assertNotIn("decltype(", candidates[0].source)
 

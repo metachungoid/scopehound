@@ -33,6 +33,7 @@ _LENGTH = re.compile(
 _LENGTH_NAME = re.compile(r"^(?:size|len|length|count|n|bytes?)$", re.IGNORECASE)
 _SKIP = {".git", "build", "out", "dist", "target", "node_modules"}
 _EXTENSIONS = {".h", ".hh", ".hpp", ".c", ".cc", ".cpp", ".cxx"}
+_HEADER_EXTENSIONS = {".h", ".hh", ".hpp"}
 
 
 def generate_harnesses(repository: Path) -> tuple[HarnessCandidate, ...]:
@@ -55,11 +56,23 @@ def generate_harnesses(repository: Path) -> tuple[HarnessCandidate, ...]:
             if return_type == "void" or not _BUFFER.search(parameters) or not _find_length(parameters):
                 continue
             function = match.group("function")
-            candidates.append(HarnessCandidate(
-                path=path.relative_to(root), function=function, parameters=parameters,
-                confidence="high", status="needs_build_validation",
-                source=_render_harness(return_type, function, parameters),
-            ))
+            candidates.append(
+                HarnessCandidate(
+                    path=path.relative_to(root),
+                    function=function,
+                    parameters=parameters,
+                    confidence="high",
+                    status="needs_build_validation",
+                    source=_render_harness(
+                        return_type,
+                        function,
+                        parameters,
+                        path.relative_to(root)
+                        if path.suffix.lower() in _HEADER_EXTENSIONS
+                        else None,
+                    ),
+                )
+            )
     candidates.sort(key=lambda item: (_function_priority(item.function), str(item.path), item.function))
     return tuple(candidates)
 
@@ -83,7 +96,12 @@ def write_harnesses(candidates: tuple[HarnessCandidate, ...], output: Path) -> N
         raise ScopeHoundError("output_failed", f"cannot write harness metadata: {error}") from error
 
 
-def _render_harness(return_type: str, function: str, parameters: str) -> str:
+def _render_harness(
+    return_type: str,
+    function: str,
+    parameters: str,
+    include_path: Path | None = None,
+) -> str:
     buffer_match = _BUFFER.search(parameters)
     length_match = _find_length(parameters)
     if buffer_match is None or length_match is None:  # pragma: no cover - guarded by caller
@@ -92,7 +110,9 @@ def _render_harness(return_type: str, function: str, parameters: str) -> str:
     buffer_name = buffer_match.group("name")
     length_type = " ".join(length_match.group("type").split())
     length_name = length_match.group("name")
-    declaration = f"extern \"C\" {return_type} {function}({parameters});"
+    declaration = (
+        "" if include_path is not None else f"{return_type} {function}({parameters});"
+    )
     arguments = []
     for parameter in (item.strip() for item in parameters.split(",")):
         if re.search(rf"\b{re.escape(buffer_name)}\b", parameter):
@@ -107,8 +127,13 @@ def _render_harness(return_type: str, function: str, parameters: str) -> str:
         else:
             arguments.append("{}")
     call = f"{function}({', '.join(arguments)})"
+    include = ""
+    if include_path is not None:
+        include_name = include_path.as_posix().replace('"', "")
+        include = f'#include "{include_name}"\n'
     return f'''#include <cstddef>
 #include <cstdint>
+{include}
 
 {declaration}
 

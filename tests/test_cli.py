@@ -28,7 +28,10 @@ class CliTests(unittest.TestCase):
                 main(["--help"])
 
         self.assertEqual(raised.exception.code, 0)
-        for command in ("validate", "score", "prepare", "build", "fuzz", "discover", "generate-harnesses", "findings", "triage", "report"):
+        for command in (
+            "validate", "score", "prepare", "build", "fuzz", "discover",
+            "generate-harnesses", "validate-harnesses", "findings", "triage", "report",
+        ):
             self.assertIn(command, output.getvalue())
 
     def test_validate_supports_text_and_json_output(self) -> None:
@@ -180,6 +183,36 @@ class CliTests(unittest.TestCase):
             )
             self.assertEqual(code, 0)
             self.assertTrue((output / "parse_packet_fuzzer.cc").exists())
+
+    def test_validate_harnesses_command_records_syntax_validation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_path = self._write_manifest(root, valid_manifest_data())
+            workspace = root / "state"
+            target = workspace / "targets" / "example-parser"
+            (target / "repo").mkdir(parents=True)
+            harnesses = target / "generated"
+            harnesses.mkdir()
+            (harnesses / "harnesses.json").write_text(
+                json.dumps([{"generated_file": "parse_packet_fuzzer.cc"}]),
+                encoding="utf-8",
+            )
+            (harnesses / "parse_packet_fuzzer.cc").write_text(
+                "int LLVMFuzzerTestOneInput(const unsigned char *, unsigned long) { return 0; }\n",
+                encoding="utf-8",
+            )
+            output = target / "validation.json"
+
+            code, _, _ = self._run(
+                "validate-harnesses", "--manifest", str(manifest_path),
+                "--workspace", str(workspace), "--harnesses-dir", str(harnesses),
+                "--output", str(output),
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(payload[0]["status"], "planned")
 
     @staticmethod
     def _write_manifest(root: Path, data: dict[str, object]) -> Path:
