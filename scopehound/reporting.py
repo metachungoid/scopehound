@@ -6,6 +6,7 @@ from pathlib import Path
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import Finding
 from scopehound.manifest import Manifest
+from scopehound.reproduction import ReproductionResult
 from scopehound.triage import ArtifactRecord
 
 
@@ -14,6 +15,7 @@ def render_report(
     artifact: ArtifactRecord,
     relative_artifact_path: str,
     finding: Finding | None = None,
+    reproduction: ReproductionResult | None = None,
 ) -> str:
     build_command = json.dumps(list(manifest.commands.build))
     fuzz_command = json.dumps(list(manifest.commands.fuzz))
@@ -41,6 +43,30 @@ def render_report(
 - Raw sanitizer evidence:
 
 {evidence}
+"""
+    reproduction_details = ""
+    if reproduction:
+        observed = ", ".join(f"`{item}`" for item in reproduction.observed_fingerprints)
+        if not observed:
+            observed = "(none)"
+        replay_stdout = _code_block(reproduction.stdout) if reproduction.stdout else "(empty)"
+        replay_stderr = _code_block(reproduction.stderr) if reproduction.stderr else "(empty)"
+        reproduction_details = f"""## Reproduction verification
+
+- Status: `{reproduction.status}`
+- Artifact: `{reproduction.artifact}`
+- Expected fingerprint: `{reproduction.expected_fingerprint}`
+- Observed fingerprints: {observed}
+- Exit code: `{reproduction.returncode}`
+- Replay command: `{json.dumps(list(reproduction.command))}`
+
+### Replay stdout
+
+{replay_stdout}
+
+### Replay stderr
+
+{replay_stderr}
 """
     return f"""---
 human_review_required: true
@@ -75,6 +101,8 @@ must complete every review item before disclosure.
 - [ ] Attach symbolized sanitizer output
 
 {technical_details}
+
+{reproduction_details}
 
 ## Security analysis
 

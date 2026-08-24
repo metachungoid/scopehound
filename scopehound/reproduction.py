@@ -25,6 +25,31 @@ class ReproductionResult:
     stderr: str
 
 
+def load_reproduction(path: Path) -> ReproductionResult:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise TypeError("reproduction record must be an object")
+        return ReproductionResult(
+            artifact=_required_string(payload, "artifact"),
+            expected_fingerprint=_required_string(payload, "expected_fingerprint"),
+            observed_fingerprints=tuple(
+                _required_string_value(item, "observed_fingerprints item")
+                for item in _required_list(payload, "observed_fingerprints")
+            ),
+            status=_required_string(payload, "status"),
+            command=tuple(
+                _required_string_value(item, "command item")
+                for item in _required_list(payload, "command")
+            ),
+            returncode=_optional_int(payload.get("returncode")),
+            stdout=_required_string(payload, "stdout"),
+            stderr=_required_string(payload, "stderr"),
+        )
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
+        raise ScopeHoundError("input_invalid", f"cannot read reproduction {path}: {error}") from error
+
+
 def reproduce_finding(
     manifest: Manifest,
     workspace: Workspace,
@@ -111,3 +136,31 @@ def _artifact_path(workspace: Workspace, target_name: str, artifact: Path) -> Pa
     if not resolved.is_file():
         raise ScopeHoundError("input_invalid", f"reproduction artifact is missing: {resolved}")
     return resolved
+
+
+def _required_string(payload: dict[str, object], field: str) -> str:
+    value = payload.get(field)
+    if not isinstance(value, str):
+        raise TypeError(f"{field} must be a string")
+    return value
+
+
+def _required_list(payload: dict[str, object], field: str) -> list[object]:
+    value = payload.get(field)
+    if not isinstance(value, list):
+        raise TypeError(f"{field} must be an array")
+    return value
+
+
+def _required_string_value(value: object, field: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{field} must be a string")
+    return value
+
+
+def _optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("returncode must be an integer or null")
+    return value

@@ -8,6 +8,7 @@ from pathlib import Path
 from scopehound.manifest import validate_manifest
 from scopehound.findings import Finding
 from scopehound.reporting import render_report, write_report
+from scopehound.reproduction import ReproductionResult
 from scopehound.triage import ArtifactRecord
 
 from tests.fixtures import valid_manifest_data
@@ -28,8 +29,20 @@ class ReportingTests(unittest.TestCase):
             fingerprint="abc123", artifact="crash-001", raw_output="sanitizer output",
             reproducibility="reproduced",
         )
+        reproduction = ReproductionResult(
+            artifact="crash-001",
+            expected_fingerprint="abc123",
+            observed_fingerprints=("abc123",),
+            status="reproduced",
+            command=("./build/parser_fuzzer", "artifacts/crash-001"),
+            returncode=1,
+            stdout="sanitizer output",
+            stderr="",
+        )
 
-        report = render_report(manifest, artifact, "artifacts/crash-001", finding)
+        report = render_report(
+            manifest, artifact, "artifacts/crash-001", finding, reproduction
+        )
 
         required_fragments = (
             "human_review_required: true",
@@ -46,6 +59,8 @@ class ReportingTests(unittest.TestCase):
             "- [ ] Reproduce against the latest eligible revision",
             "AddressSanitizer", "heap-buffer-overflow", "/src/lib/parser.c:142:9",
             "parse_packet", "abc123", "reproduced", "sanitizer output",
+            "Reproduction verification", "reproduced", "Expected fingerprint: `abc123`",
+            "Observed fingerprints: `abc123`", "Exit code: `1`",
         )
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):

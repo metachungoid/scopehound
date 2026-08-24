@@ -10,6 +10,7 @@ from pathlib import Path
 
 from scopehound.cli import main
 from scopehound.findings import parse_sanitizer_output, write_findings
+from scopehound.reproduction import ReproductionResult, write_reproduction
 
 from tests.fixtures import valid_manifest_data
 
@@ -122,19 +123,30 @@ class CliTests(unittest.TestCase):
             manifest_path = self._write_manifest(root, valid_manifest_data())
             triage_output = root / "triage.json"
             report_output = root / "report.md"
+            reproduction_output = root / "reproduction.json"
+            write_reproduction(
+                ReproductionResult(
+                    artifact="crash-001", expected_fingerprint="abc123",
+                    observed_fingerprints=("abc123",), status="reproduced",
+                    command=("./build/parser_fuzzer", "crash-001"), returncode=1,
+                    stdout="sanitizer output", stderr="",
+                ),
+                reproduction_output,
+            )
 
             triage_code, _, _ = self._run(
                 "triage", "--artifacts", str(artifacts), "--output", str(triage_output)
             )
             report_code, _, _ = self._run(
                 "report", "--manifest", str(manifest_path), "--artifact", str(artifact),
-                "--output", str(report_output),
+                "--reproduction", str(reproduction_output), "--output", str(report_output),
             )
 
             self.assertEqual(triage_code, 0)
             self.assertEqual(report_code, 0)
             self.assertEqual(json.loads(triage_output.read_text())["unique"][0]["path"], "crash-001")
             self.assertIn("human_review_required: true", report_output.read_text())
+            self.assertIn("Reproduction verification", report_output.read_text())
 
     def test_findings_command_extracts_a_reproducible_issue(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

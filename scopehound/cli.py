@@ -14,7 +14,7 @@ from scopehound.discovery import discover_harnesses, write_harnesses
 from scopehound.harness import generate_harnesses, write_harnesses as write_generated_harnesses
 from scopehound.manifest import Manifest, load_manifest
 from scopehound.reporting import render_report, write_report
-from scopehound.reproduction import reproduce_finding, write_reproduction
+from scopehound.reproduction import load_reproduction, reproduce_finding, write_reproduction
 from scopehound.runner import (
     CommandPlan,
     CommandResult,
@@ -112,6 +112,7 @@ def build_parser() -> argparse.ArgumentParser:
     _manifest_argument(report)
     report.add_argument("--artifact", required=True, type=Path)
     report.add_argument("--findings", type=Path)
+    report.add_argument("--reproduction", type=Path)
     report.add_argument("--output", required=True, type=Path)
     _json_argument(report)
 
@@ -295,7 +296,15 @@ def _dispatch(args: argparse.Namespace) -> int:
             parsed = load_findings(args.findings)
             matching = [item for item in parsed if item.artifact == artifact.path.name]
             finding = matching[0] if matching else (parsed[0] if len(parsed) == 1 else None)
-        report = render_report(manifest, artifact, artifact.path.name, finding)
+        reproduction = None
+        if args.reproduction:
+            reproduction = load_reproduction(args.reproduction)
+            if reproduction.artifact != artifact.path.name:
+                raise ScopeHoundError(
+                    "input_invalid",
+                    f"reproduction artifact does not match requested artifact: {reproduction.artifact}",
+                )
+        report = render_report(manifest, artifact, artifact.path.name, finding, reproduction)
         write_report(report, args.output)
         _success(args, {"output": str(args.output), "sha256": artifact.sha256}, f"report draft: {args.output}")
         return 0

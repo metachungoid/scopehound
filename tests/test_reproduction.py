@@ -9,7 +9,7 @@ from pathlib import Path
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import parse_sanitizer_output
 from scopehound.manifest import validate_manifest
-from scopehound.reproduction import reproduce_finding, write_reproduction
+from scopehound.reproduction import load_reproduction, reproduce_finding, write_reproduction
 from scopehound.workspace import Workspace
 
 from tests.fixtures import valid_manifest_data
@@ -58,11 +58,13 @@ class ReproductionTests(unittest.TestCase):
             output = Path(temp_dir) / "reproduction.json"
             write_reproduction(result, output)
             payload = json.loads(output.read_text(encoding="utf-8"))
+            loaded = load_reproduction(output)
 
         self.assertEqual(result.status, "reproduced")
         self.assertEqual(result.returncode, 1)
         self.assertIn(expected, result.observed_fingerprints)
         self.assertEqual(payload["status"], "reproduced")
+        self.assertEqual(loaded.status, "reproduced")
 
     def test_execute_distinguishes_missing_reproduction(self) -> None:
         manifest = self._manifest([sys.executable, "-c", "print('no sanitizer')", "{artifact}"])

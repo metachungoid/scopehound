@@ -171,6 +171,9 @@ The command is bounded and shell-free. A matching fingerprint marks the
 baseline finding `reproduced`; a different or absent sanitizer signal is
 recorded separately for human review.
 
+Pass the resulting JSON to `scopehound report` with `--reproduction` to embed
+the replay status, fingerprints, exit code, and captured output in the draft.
+
 Deduplicate byte-identical artifacts and write stable JSON:
 
 ```bash
