@@ -6,8 +6,17 @@ build-backend = "setuptools.build_meta"
 name = "scopehound"
 version = "0.1.0"
 description = "Scope-aware local memory-safety research assistant"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  {name = "ScopeHound contributors"}
+]
+
+[project.scripts]
+scopehound = "scopehound.cli:entrypoint"
 
 [tool.setuptools]
 packages = ["scopehound"]

@@ -4,3 +4,5 @@ __pycache__/
 .venv/
 .scopehound/
 *.egg-info/
+build/
+dist/
