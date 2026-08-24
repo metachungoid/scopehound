@@ -3,11 +3,13 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from scopehound.cli import main
+from scopehound.findings import parse_sanitizer_output, write_findings
 
 from tests.fixtures import valid_manifest_data
 
@@ -30,7 +32,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 0)
         for command in (
             "validate", "score", "prepare", "build", "fuzz", "discover",
-            "generate-harnesses", "validate-harnesses", "findings", "triage", "report",
+            "generate-harnesses", "validate-harnesses", "reproduce", "findings", "triage", "report",
         ):
             self.assertIn(command, output.getvalue())
 
@@ -250,6 +252,43 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(payload[0]["status"], "planned")
+
+    def test_reproduce_command_updates_matching_finding(self) -> None:
+        sanitizer_log = (
+            "ERROR: AddressSanitizer: heap-buffer-overflow\n"
+            "    #0 0x1 in parse /src/parser.c:12:4\n"
+            "SUMMARY: AddressSanitizer: heap-buffer-overflow /src/parser.c:12:4 in parse\n"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            data = valid_manifest_data()
+            data["commands"]["reproduce"] = [  # type: ignore[index]
+                sys.executable, "-c", "print(" + repr(sanitizer_log) + ")", "{artifact}"
+            ]
+            manifest_path = self._write_manifest(root, data)
+            workspace = root / "state"
+            target = workspace / "targets" / "example-parser"
+            repo = target / "repo"
+            repo.mkdir(parents=True)
+            artifacts = target / "artifacts"
+            artifacts.mkdir()
+            artifact = artifacts / "crash-001"
+            artifact.write_bytes(b"boom")
+            findings_path = target / "findings.json"
+            write_findings(parse_sanitizer_output(sanitizer_log, artifact), findings_path)
+            output = target / "reproduction.json"
+
+            code, _, _ = self._run(
+                "reproduce", "--manifest", str(manifest_path), "--workspace", str(workspace),
+                "--artifact", str(artifact), "--findings", str(findings_path),
+                "--output", str(output), "--execute",
+            )
+            result = json.loads(output.read_text(encoding="utf-8"))
+            findings = json.loads(findings_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(result["status"], "reproduced")
+        self.assertEqual(findings[0]["reproducibility"], "reproduced")
 
     @staticmethod
     def _write_manifest(root: Path, data: dict[str, object]) -> Path:

@@ -39,6 +39,7 @@ class ReportingTests(unittest.TestCase):
             "2026-08-24",
             '["cmake", "--build", "build"]',
             '["./build/parser_fuzzer"]',
+            "Reproduction command: `not configured`",
             artifact.sha256,
             "- [ ] Confirm attacker-controlled reachability",
             "- [ ] Search for duplicate reports and root causes",

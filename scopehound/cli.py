@@ -4,6 +4,7 @@ import argparse
 import json
 import shlex
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Sequence
 
@@ -13,6 +14,7 @@ from scopehound.discovery import discover_harnesses, write_harnesses
 from scopehound.harness import generate_harnesses, write_harnesses as write_generated_harnesses
 from scopehound.manifest import Manifest, load_manifest
 from scopehound.reporting import render_report, write_report
+from scopehound.reproduction import reproduce_finding, write_reproduction
 from scopehound.runner import (
     CommandPlan,
     CommandResult,
@@ -82,6 +84,18 @@ def build_parser() -> argparse.ArgumentParser:
     validation.add_argument("--compiler", default="c++")
     _execute_argument(validation)
     _json_argument(validation)
+
+    reproduce = subparsers.add_parser(
+        "reproduce", help="replay an artifact and compare its sanitizer fingerprint"
+    )
+    _manifest_argument(reproduce)
+    _workspace_argument(reproduce)
+    reproduce.add_argument("--artifact", required=True, type=Path)
+    reproduce.add_argument("--findings", required=True, type=Path)
+    reproduce.add_argument("--output", required=True, type=Path)
+    reproduce.add_argument("--timeout", type=int, default=120, metavar="SECONDS")
+    _execute_argument(reproduce)
+    _json_argument(reproduce)
 
     findings = subparsers.add_parser("findings", help="extract structured sanitizer findings from a log")
     findings.add_argument("--log", required=True, type=Path)
@@ -222,6 +236,47 @@ def _dispatch(args: argparse.Namespace) -> int:
                 },
             },
             f"validated {len(results)} generated harnesses -> {output}",
+        )
+        return 0
+
+    if args.command == "reproduce":
+        manifest = load_manifest(args.manifest)
+        workspace = Workspace(args.workspace)
+        findings_path = _target_path(workspace, manifest.target.name, args.findings)
+        output = _target_path(workspace, manifest.target.name, args.output)
+        artifact = args.artifact.expanduser().resolve()
+        parsed = load_findings(findings_path)
+        matching = [item for item in parsed if item.artifact == artifact.name]
+        baseline = matching[0] if matching else (parsed[0] if len(parsed) == 1 else None)
+        if baseline is None:
+            raise ScopeHoundError(
+                "input_invalid", f"no unique baseline finding matches artifact: {artifact.name}"
+            )
+        result = reproduce_finding(
+            manifest,
+            workspace,
+            artifact,
+            baseline.fingerprint,
+            execute=args.execute,
+            timeout_seconds=args.timeout,
+        )
+        write_reproduction(result, output)
+        if result.status == "reproduced":
+            updated = tuple(
+                replace(item, reproducibility="reproduced")
+                if item.fingerprint == baseline.fingerprint
+                else item
+                for item in parsed
+            )
+            write_findings(updated, findings_path)
+        if result.status in {"different_finding", "not_reproduced"}:
+            raise ScopeHoundError(
+                "command_failed", f"reproduction status: {result.status}; see {output}"
+            )
+        _success(
+            args,
+            {"artifact": result.artifact, "output": str(output), "status": result.status},
+            f"reproduction status: {result.status} -> {output}",
         )
         return 0
 

@@ -46,6 +46,7 @@ class Authorization:
 class Commands:
     build: tuple[str, ...]
     fuzz: tuple[str, ...]
+    reproduce: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,7 @@ def validate_manifest(data: object) -> Manifest:
         commands = Commands(
             build=_command(commands_data.get("build"), "commands.build"),
             fuzz=_command(commands_data.get("fuzz"), "commands.fuzz"),
+            reproduce=_reproduction_command(commands_data.get("reproduce")),
         )
 
         environment_data = _mapping(root.get("environment", {}), "environment")
@@ -177,6 +179,16 @@ def _command(value: object, field: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not value:
         _invalid(f"{field} must be a non-empty argument array")
     return tuple(_string(item, f"{field} argument") for item in value)
+
+
+def _reproduction_command(value: object) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    command = _command(value, "commands.reproduce")
+    placeholders = sum(argument.count("{artifact}") for argument in command)
+    if placeholders != 1:
+        _invalid("commands.reproduce must contain exactly one {artifact} placeholder")
+    return command
 
 
 def _factor(value: object, field: str) -> float:

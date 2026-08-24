@@ -23,6 +23,10 @@
     ],
     "fuzz": [
       "./build/parser_fuzzer"
+    ],
+    "reproduce": [
+      "./build/parser_fuzzer",
+      "{artifact}"
     ]
   },
   "environment": {

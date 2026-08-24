@@ -47,6 +47,7 @@ An executable target must include:
 - the policy URL and the date you personally checked it
 - `memory-corruption` among the eligible classes
 - build and fuzz commands expressed as argument arrays
+- an optional artifact replay command with an explicit `{artifact}` placeholder
 - opportunity factors between zero and one
 
 The authorization record is an audit checkpoint, not proof that its claims are
@@ -147,6 +148,29 @@ The validation record distinguishes `planned`, `syntax_valid`, and
 `syntax_invalid`. A successful syntax check is only a compiler-front-end check;
 it does not establish linkability, reachability, or security impact.
 
+For a finding with an artifact-specific baseline, add an authorized replay
+command to the manifest, such as:
+
+```json
+"reproduce": ["./build/parser_fuzzer", "{artifact}"]
+```
+
+Then compare the replay's sanitizer fingerprint:
+
+```bash
+scopehound reproduce \
+  --manifest target.json \
+  --workspace .scopehound \
+  --artifact .scopehound/targets/example-parser/artifacts/crash-001 \
+  --findings .scopehound/targets/example-parser/findings.json \
+  --output .scopehound/targets/example-parser/reproduction.json \
+  --execute
+```
+
+The command is bounded and shell-free. A matching fingerprint marks the
+baseline finding `reproduced`; a different or absent sanitizer signal is
+recorded separately for human review.
+
 Deduplicate byte-identical artifacts and write stable JSON:
 
 ```bash
@@ -193,6 +217,7 @@ the report.
 - `discover`: find existing C/C++ fuzz harnesses in a checkout
 - `generate-harnesses`: generate review-only libFuzzer harness candidates
 - `validate-harnesses`: syntax-check generated harnesses under an authorized checkout
+- `reproduce`: replay an artifact and compare its sanitizer fingerprint
 - `findings`: parse ASan/UBSan logs into structured findings
 - `triage`: hash and group local artifacts
 - `report`: render a human-review Markdown disclosure draft

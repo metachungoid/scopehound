@@ -18,6 +18,7 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(manifest.target.name, "example-parser")
         self.assertEqual(manifest.target.language, "c")
         self.assertEqual(manifest.commands.build, ("cmake", "--build", "build"))
+        self.assertIsNone(manifest.commands.reproduce)
         self.assertEqual(manifest.authorization.eligible_classes, ("memory-corruption",))
         self.assertEqual(dict(manifest.environment), {
             "CC": "clang",
@@ -62,6 +63,24 @@ class ManifestTests(unittest.TestCase):
         data["commands"]["build"] = "cmake --build build"  # type: ignore[index]
 
         self._assert_manifest_invalid(data)
+
+    def test_accepts_reproduction_command_with_artifact_placeholder(self) -> None:
+        data = valid_manifest_data()
+        data["commands"]["reproduce"] = ["./build/parser_fuzzer", "{artifact}"]  # type: ignore[index]
+
+        manifest = validate_manifest(data)
+
+        self.assertEqual(manifest.commands.reproduce, ("./build/parser_fuzzer", "{artifact}"))
+
+    def test_rejects_reproduction_command_without_exact_artifact_placeholder(self) -> None:
+        for command in (
+            ["./build/parser_fuzzer"],
+            ["./build/parser_fuzzer", "{artifact}", "{artifact}"],
+        ):
+            with self.subTest(command=command):
+                data = valid_manifest_data()
+                data["commands"]["reproduce"] = command  # type: ignore[index]
+                self._assert_manifest_invalid(data)
 
     def test_rejects_invalid_language_date_and_factor(self) -> None:
         mutations = [

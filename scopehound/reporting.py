@@ -17,6 +17,11 @@ def render_report(
 ) -> str:
     build_command = json.dumps(list(manifest.commands.build))
     fuzz_command = json.dumps(list(manifest.commands.fuzz))
+    reproduce_command = (
+        json.dumps(list(manifest.commands.reproduce))
+        if manifest.commands.reproduce
+        else "not configured"
+    )
     technical_details = ""
     if finding:
         stack = "".join(f"  - `{frame}`\n" for frame in finding.stack)
@@ -60,6 +65,7 @@ must complete every review item before disclosure.
 
 - Build command: `{build_command}`
 - Fuzz command: `{fuzz_command}`
+- Reproduction command: `{reproduce_command}`
 - Artifact: `{relative_artifact_path}`
 - Artifact size: {artifact.size} bytes
 - SHA-256: `{artifact.sha256}`

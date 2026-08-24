@@ -47,9 +47,11 @@ is a security vulnerability.
 6. `scopehound fuzz` runs the manifest's local fuzz command for a bounded number
    of seconds and stores artifacts beneath the workspace. It is dry-run by
    default and rejects unbounded durations.
-7. `scopehound triage` fingerprints artifact files, groups duplicates, records
+7. `scopehound reproduce` replays an artifact through an explicitly configured
+   command and compares the sanitizer fingerprint against the baseline finding.
+8. `scopehound triage` fingerprints artifact files, groups duplicates, records
    hashes and metadata, and creates one report directory per unique artifact.
-8. `scopehound report` renders a Markdown disclosure draft for human review.
+9. `scopehound report` renders a Markdown disclosure draft for human review.
 
 ## Architecture
 
@@ -95,7 +97,8 @@ The initial JSON manifest has these sections:
   },
   "commands": {
     "build": ["cmake", "-S", ".", "-B", "build"],
-    "fuzz": ["./build/parser_fuzzer"]
+    "fuzz": ["./build/parser_fuzzer"],
+    "reproduce": ["./build/parser_fuzzer", "{artifact}"]
   },
   "environment": {
     "CC": "clang",
