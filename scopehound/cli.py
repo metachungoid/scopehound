@@ -9,6 +9,7 @@ from typing import Sequence
 
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import load_findings, parse_sanitizer_output, write_findings
+from scopehound.discovery import discover_harnesses, write_harnesses
 from scopehound.manifest import Manifest, load_manifest
 from scopehound.reporting import render_report, write_report
 from scopehound.runner import (
@@ -58,6 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
     fuzz.add_argument("--duration", required=True, type=int, metavar="SECONDS")
     _execute_argument(fuzz)
     _json_argument(fuzz)
+
+    discover = subparsers.add_parser("discover", help="find existing C/C++ fuzz harnesses")
+    discover.add_argument("--repo", required=True, type=Path)
+    discover.add_argument("--output", required=True, type=Path)
+    _json_argument(discover)
 
     findings = subparsers.add_parser("findings", help="extract structured sanitizer findings from a log")
     findings.add_argument("--log", required=True, type=Path)
@@ -155,6 +161,12 @@ def _dispatch(args: argparse.Namespace) -> int:
         findings = parse_sanitizer_output(log, args.artifact)
         write_findings(findings, args.output)
         _success(args, {"count": len(findings), "output": str(args.output)}, f"found {len(findings)} sanitizer findings -> {args.output}")
+        return 0
+
+    if args.command == "discover":
+        candidates = discover_harnesses(args.repo)
+        write_harnesses(candidates, args.output)
+        _success(args, {"count": len(candidates), "output": str(args.output)}, f"discovered {len(candidates)} harness candidates -> {args.output}")
         return 0
 
     if args.command == "triage":

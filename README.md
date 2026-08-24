@@ -105,6 +105,19 @@ scopehound prepare \
 
 ## Triage and report drafts
 
+After preparation, inspect the checkout for existing libFuzzer and OSS-Fuzz
+harnesses:
+
+```bash
+scopehound discover \
+  --repo .scopehound/targets/example-parser/repo \
+  --output .scopehound/targets/example-parser/harnesses.json
+```
+
+The discovery report prioritizes files containing `LLVMFuzzerTestOneInput`,
+`FUZZ_TEST`, or `DEFINE_PROTO_FUZZER`. It identifies candidates; it does not
+pretend that a candidate is buildable until the project build validates it.
+
 Deduplicate byte-identical artifacts and write stable JSON:
 
 ```bash
@@ -148,6 +161,7 @@ the report.
 - `prepare`: plan or clone an authorized repository at a pinned revision
 - `build`: plan or run the manifest's build command
 - `fuzz`: plan or run the bounded local fuzz command
+- `discover`: find existing C/C++ fuzz harnesses in a checkout
 - `findings`: parse ASan/UBSan logs into structured findings
 - `triage`: hash and group local artifacts
 - `report`: render a human-review Markdown disclosure draft
