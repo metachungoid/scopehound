@@ -22,6 +22,15 @@ class TriageResult:
     duplicates: Mapping[str, tuple[str, ...]]
 
 
+def inspect_artifact(path: Path) -> ArtifactRecord:
+    if path.is_symlink() or not path.is_file():
+        raise ScopeHoundError(
+            "artifacts_invalid", f"artifact is not a regular file: {path}"
+        )
+    sha256, size = _hash_file(path)
+    return ArtifactRecord(path, sha256, size)
+
+
 def triage_artifacts(directory: Path) -> TriageResult:
     if not directory.is_dir():
         raise ScopeHoundError(
@@ -32,8 +41,8 @@ def triage_artifacts(directory: Path) -> TriageResult:
     for path in sorted(directory.iterdir(), key=lambda item: item.name):
         if path.is_symlink() or not path.is_file():
             continue
-        sha256, size = _hash_file(path)
-        groups.setdefault((sha256, size), []).append(path)
+        record = inspect_artifact(path)
+        groups.setdefault((record.sha256, record.size), []).append(path)
 
     canonical_records: list[ArtifactRecord] = []
     duplicates: dict[str, tuple[str, ...]] = {}
