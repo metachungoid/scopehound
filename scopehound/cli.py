@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Sequence
 
 from scopehound.errors import ScopeHoundError
+from scopehound.findings import load_findings, parse_sanitizer_output, write_findings
 from scopehound.manifest import Manifest, load_manifest
 from scopehound.reporting import render_report, write_report
 from scopehound.runner import (
@@ -58,6 +59,12 @@ def build_parser() -> argparse.ArgumentParser:
     _execute_argument(fuzz)
     _json_argument(fuzz)
 
+    findings = subparsers.add_parser("findings", help="extract structured sanitizer findings from a log")
+    findings.add_argument("--log", required=True, type=Path)
+    findings.add_argument("--artifact", type=Path)
+    findings.add_argument("--output", required=True, type=Path)
+    _json_argument(findings)
+
     triage = subparsers.add_parser("triage", help="deduplicate local crash artifacts")
     triage.add_argument("--artifacts", required=True, type=Path)
     triage.add_argument("--output", required=True, type=Path)
@@ -66,6 +73,7 @@ def build_parser() -> argparse.ArgumentParser:
     report = subparsers.add_parser("report", help="write a human-review disclosure draft")
     _manifest_argument(report)
     report.add_argument("--artifact", required=True, type=Path)
+    report.add_argument("--findings", type=Path)
     report.add_argument("--output", required=True, type=Path)
     _json_argument(report)
 
@@ -129,10 +137,24 @@ def _dispatch(args: argparse.Namespace) -> int:
         manifest = load_manifest(args.manifest)
         workspace = Workspace(args.workspace)
         plan = fuzz_plan(manifest, workspace, args.duration)
-        result = run_plan(plan, args.execute)
+        result = run_plan(plan, args.execute, allow_failure=True)
         if args.execute:
             _write_logs(workspace, manifest, "fuzz", (result,))
+            findings = parse_sanitizer_output(result.stdout + "\n" + result.stderr)
+            write_findings(findings, workspace.findings_file(manifest.target.name))
+            if result.returncode and not findings:
+                raise ScopeHoundError("command_failed", f"fuzz command exited {result.returncode} without a sanitizer finding")
         _plans_success(args, (plan,), (result,))
+        return 0
+
+    if args.command == "findings":
+        try:
+            log = args.log.read_text(encoding="utf-8")
+        except OSError as error:
+            raise ScopeHoundError("input_invalid", f"cannot read log {args.log}: {error}") from error
+        findings = parse_sanitizer_output(log, args.artifact)
+        write_findings(findings, args.output)
+        _success(args, {"count": len(findings), "output": str(args.output)}, f"found {len(findings)} sanitizer findings -> {args.output}")
         return 0
 
     if args.command == "triage":
@@ -145,7 +167,11 @@ def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "report":
         manifest = load_manifest(args.manifest)
         artifact = inspect_artifact(args.artifact)
-        report = render_report(manifest, artifact, artifact.path.name)
+        finding = None
+        if args.findings:
+            parsed = load_findings(args.findings)
+            finding = parsed[0] if parsed else None
+        report = render_report(manifest, artifact, artifact.path.name, finding)
         write_report(report, args.output)
         _success(args, {"output": str(args.output), "sha256": artifact.sha256}, f"report draft: {args.output}")
         return 0

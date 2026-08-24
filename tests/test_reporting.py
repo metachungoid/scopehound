@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from scopehound.manifest import validate_manifest
+from scopehound.findings import Finding
 from scopehound.reporting import render_report, write_report
 from scopehound.triage import ArtifactRecord
 
@@ -20,8 +21,15 @@ class ReportingTests(unittest.TestCase):
             sha256=hashlib.sha256(b"boom").hexdigest(),
             size=4,
         )
+        finding = Finding(
+            sanitizer="AddressSanitizer", kind="heap-buffer-overflow",
+            summary="heap-buffer-overflow", location="/src/lib/parser.c:142:9",
+            function="parse_packet", stack=("parse_packet at /src/lib/parser.c:142:9",),
+            fingerprint="abc123", artifact="crash-001", raw_output="sanitizer output",
+            reproducibility="reproduced",
+        )
 
-        report = render_report(manifest, artifact, "artifacts/crash-001")
+        report = render_report(manifest, artifact, "artifacts/crash-001", finding)
 
         required_fragments = (
             "human_review_required: true",
@@ -35,6 +43,8 @@ class ReportingTests(unittest.TestCase):
             "- [ ] Confirm attacker-controlled reachability",
             "- [ ] Search for duplicate reports and root causes",
             "- [ ] Reproduce against the latest eligible revision",
+            "AddressSanitizer", "heap-buffer-overflow", "/src/lib/parser.c:142:9",
+            "parse_packet", "abc123", "reproduced",
         )
         for fragment in required_fragments:
             with self.subTest(fragment=fragment):

@@ -28,7 +28,7 @@ class CliTests(unittest.TestCase):
                 main(["--help"])
 
         self.assertEqual(raised.exception.code, 0)
-        for command in ("validate", "score", "prepare", "build", "fuzz", "triage", "report"):
+        for command in ("validate", "score", "prepare", "build", "fuzz", "findings", "triage", "report"):
             self.assertIn(command, output.getvalue())
 
     def test_validate_supports_text_and_json_output(self) -> None:
@@ -130,6 +130,29 @@ class CliTests(unittest.TestCase):
             self.assertEqual(report_code, 0)
             self.assertEqual(json.loads(triage_output.read_text())["unique"][0]["path"], "crash-001")
             self.assertIn("human_review_required: true", report_output.read_text())
+
+    def test_findings_command_extracts_a_reproducible_issue(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            log = root / "asan.log"
+            output = root / "findings.json"
+            log.write_text(
+                "ERROR: AddressSanitizer: heap-use-after-free\\n"
+                "    #0 0x1 in parse /src/parser.c:12:4\\n"
+                "SUMMARY: AddressSanitizer: heap-use-after-free /src/parser.c:12:4 in parse\\n",
+                encoding="utf-8",
+            )
+
+            code, _, _ = self._run(
+                "findings", "--log", str(log), "--output", str(output),
+                "--artifact", "crash-001",
+            )
+
+            payload = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(payload[0]["kind"], "heap-use-after-free")
+        self.assertEqual(payload[0]["artifact"], "crash-001")
 
     @staticmethod
     def _write_manifest(root: Path, data: dict[str, object]) -> Path:

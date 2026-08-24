@@ -88,7 +88,10 @@ command receives `SCOPEHOUND_ARTIFACTS_DIR`, pointing to:
 <workspace>/targets/<target-name>/artifacts
 ```
 
-Executed command output is recorded beneath the target's `logs` directory.
+Executed command output is recorded beneath the target's `logs` directory. A
+fuzz run also parses ASan/UBSan output into `findings.json`; a non-zero fuzz
+exit is accepted as a finding when sanitizer evidence is present, but remains
+an error when no sanitizer finding can be extracted.
 
 Local fixture repositories require an additional deliberate flag:
 
@@ -110,12 +113,27 @@ scopehound triage \
   --output .scopehound/targets/example-parser/triage.json
 ```
 
+Parse an existing sanitizer log directly:
+
+```bash
+scopehound findings \
+  --log .scopehound/targets/example-parser/logs/fuzz.log \
+  --artifact .scopehound/targets/example-parser/artifacts/crash-001 \
+  --output .scopehound/targets/example-parser/findings.json
+```
+
+Each finding includes the sanitizer, signal, source location, function,
+symbolized stack frames when present, stable fingerprint, artifact name, raw
+sanitizer block, and reproducibility status. Identical root-cause signatures
+are deduplicated.
+
 Create a Markdown evidence draft for one artifact:
 
 ```bash
 scopehound report \
   --manifest target.json \
   --artifact .scopehound/targets/example-parser/artifacts/crash-001 \
+  --findings .scopehound/targets/example-parser/findings.json \
   --output .scopehound/targets/example-parser/reports/crash-001.md
 ```
 
@@ -130,6 +148,7 @@ the report.
 - `prepare`: plan or clone an authorized repository at a pinned revision
 - `build`: plan or run the manifest's build command
 - `fuzz`: plan or run the bounded local fuzz command
+- `findings`: parse ASan/UBSan logs into structured findings
 - `triage`: hash and group local artifacts
 - `report`: render a human-review Markdown disclosure draft
 

@@ -42,7 +42,7 @@ class EndToEndTests(unittest.TestCase):
             data["commands"]["fuzz"] = [  # type: ignore[index]
                 sys.executable,
                 "-c",
-                "import os; from pathlib import Path; p=Path(os.environ['SCOPEHOUND_ARTIFACTS_DIR']); p.mkdir(parents=True, exist_ok=True); (p/'crash-001').write_bytes(b'boom')",
+                "import os; from pathlib import Path; p=Path(os.environ['SCOPEHOUND_ARTIFACTS_DIR']); p.mkdir(parents=True, exist_ok=True); (p/'crash-001').write_bytes(b'boom'); print('ERROR: AddressSanitizer: heap-buffer-overflow'); print('    #0 0x1 in parse /src/parser.c:12:4'); print('SUMMARY: AddressSanitizer: heap-buffer-overflow /src/parser.c:12:4 in parse'); raise SystemExit(1)",
             ]
             manifest_path = root / "target.json"
             manifest_path.write_text(json.dumps(data), encoding="utf-8")
@@ -78,6 +78,9 @@ class EndToEndTests(unittest.TestCase):
             self.assertTrue((target / "logs" / "build.log").exists())
             self.assertTrue((target / "logs" / "fuzz.log").exists())
             self.assertTrue(triage_output.exists())
+            findings = json.loads((target / "findings.json").read_text(encoding="utf-8"))
+            self.assertEqual(findings[0]["kind"], "heap-buffer-overflow")
+            self.assertEqual(findings[0]["location"], "/src/parser.c:12:4")
             self.assertIn(revision, report_output.read_text(encoding="utf-8"))
 
     @staticmethod

@@ -31,6 +31,9 @@ class Workspace:
     def artifacts_dir(self, name: str) -> Path:
         return self._contained(self.target_dir(name) / "artifacts")
 
+    def findings_file(self, name: str) -> Path:
+        return self._contained(self.target_dir(name) / "findings.json")
+
     def _contained(self, path: Path) -> Path:
         resolved = path.resolve()
         try:

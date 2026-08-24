@@ -102,7 +102,7 @@ def fuzz_plan(
     )
 
 
-def run_plan(plan: CommandPlan, execute: bool = False) -> CommandResult:
+def run_plan(plan: CommandPlan, execute: bool = False, allow_failure: bool = False) -> CommandResult:
     if not execute:
         return CommandResult(plan.argv, None, "", "", False)
 
@@ -139,7 +139,7 @@ def run_plan(plan: CommandPlan, execute: bool = False) -> CommandResult:
         stderr=completed.stderr,
         executed=True,
     )
-    if completed.returncode != 0:
+    if completed.returncode != 0 and not allow_failure:
         detail = completed.stderr.strip() or completed.stdout.strip() or "no output"
         raise ScopeHoundError(
             "command_failed",

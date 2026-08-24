@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from scopehound.errors import ScopeHoundError
+from scopehound.findings import Finding
 from scopehound.manifest import Manifest
 from scopehound.triage import ArtifactRecord
 
@@ -12,9 +13,24 @@ def render_report(
     manifest: Manifest,
     artifact: ArtifactRecord,
     relative_artifact_path: str,
+    finding: Finding | None = None,
 ) -> str:
     build_command = json.dumps(list(manifest.commands.build))
     fuzz_command = json.dumps(list(manifest.commands.fuzz))
+    technical_details = ""
+    if finding:
+        stack = "".join(f"  - `{frame}`\n" for frame in finding.stack)
+        technical_details = f"""## Parsed technical finding
+
+- Sanitizer: {finding.sanitizer}
+- Signal: {finding.kind}
+- Summary: {finding.summary}
+- Location: `{finding.location}`
+- Function: `{finding.function}`
+- Fingerprint: `{finding.fingerprint}`
+- Reproducibility status: `{finding.reproducibility}`
+- Stack:
+{stack}"""
     return f"""---
 human_review_required: true
 target: {manifest.target.name}
@@ -45,6 +61,8 @@ must complete every review item before disclosure.
 - [ ] Record exact host/container and compiler versions
 - [ ] Add deterministic reproduction steps
 - [ ] Attach symbolized sanitizer output
+
+{technical_details}
 
 ## Security analysis
 
