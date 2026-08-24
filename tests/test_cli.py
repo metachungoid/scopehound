@@ -302,6 +302,37 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result["status"], "reproduced")
         self.assertEqual(findings[0]["reproducibility"], "reproduced")
 
+    def test_triage_command_clusters_finding_fingerprints(self) -> None:
+        log = (
+            "ERROR: AddressSanitizer: heap-buffer-overflow\n"
+            "SUMMARY: AddressSanitizer: heap-buffer-overflow /src/parser.c:12:4 in parse\n"
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+            (artifacts / "crash-001").write_bytes(b"alpha")
+            (artifacts / "crash-002").write_bytes(b"beta")
+            findings_path = root / "findings.json"
+            write_findings(
+                parse_sanitizer_output(log, Path("crash-001"))
+                + parse_sanitizer_output(log, Path("crash-002")),
+                findings_path,
+            )
+            output = root / "triage.json"
+
+            code, _, _ = self._run(
+                "triage", "--artifacts", str(artifacts), "--findings", str(findings_path),
+                "--output", str(output),
+            )
+            payload = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(len(payload["finding_groups"]), 1)
+        self.assertEqual(
+            payload["finding_groups"][0]["artifacts"], ["crash-001", "crash-002"]
+        )
+
     @staticmethod
     def _write_manifest(root: Path, data: dict[str, object]) -> Path:
         path = root / "target.json"

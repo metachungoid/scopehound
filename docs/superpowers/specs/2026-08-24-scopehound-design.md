@@ -19,6 +19,7 @@ is a security vulnerability.
   environment settings.
 - Rank authorized targets using transparent, editable opportunity factors.
 - Collect, fingerprint, and deduplicate local crash artifacts.
+- Cluster distinct artifacts by sanitizer fingerprint for issue-level triage.
 - Produce a report bundle containing reproduction and scope evidence.
 - Operate safely in dry-run mode by default.
 
@@ -49,8 +50,9 @@ is a security vulnerability.
    default and rejects unbounded durations.
 7. `scopehound reproduce` replays an artifact through an explicitly configured
    command and compares the sanitizer fingerprint against the baseline finding.
-8. `scopehound triage` fingerprints artifact files, groups duplicates, records
-   hashes and metadata, and creates one report directory per unique artifact.
+8. `scopehound triage` fingerprints artifact files, groups duplicates and
+   sanitizer signatures, records hashes and metadata, and creates one report
+   directory per unique artifact.
 9. `scopehound report` renders a Markdown disclosure draft for human review.
 
 ## Architecture
@@ -164,8 +166,9 @@ can challenge the ranking.
 
 The MVP treats each artifact as untrusted bytes. It computes SHA-256 and a
 normalized filename-independent fingerprint, records file size, and groups
-byte-identical artifacts. A later version can add sanitizer stack
-normalization and root-cause clustering.
+byte-identical artifacts. When findings are supplied, triage also groups
+distinct artifacts by their sanitizer fingerprint; this is an issue candidate,
+not a root-cause or severity determination.
 
 Each report draft contains:
 
@@ -173,6 +176,7 @@ Each report draft contains:
 - scope-policy URL and verification date
 - build and fuzz commands
 - artifact hash and relative path
+- sanitizer fingerprint groups and reproduction evidence when available
 - reproduction placeholder
 - impact and reachability placeholders
 - duplicate-search and current-version confirmation checklists

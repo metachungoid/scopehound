@@ -7,7 +7,8 @@ import unittest
 from pathlib import Path
 
 from scopehound.errors import ScopeHoundError
-from scopehound.triage import triage_artifacts, write_triage
+from scopehound.findings import parse_sanitizer_output
+from scopehound.triage import TriageResult, cluster_findings, triage_artifacts, write_triage
 
 
 class TriageTests(unittest.TestCase):
@@ -55,6 +56,40 @@ class TriageTests(unittest.TestCase):
             self.assertEqual(first_render, output.read_text(encoding="utf-8"))
             self.assertEqual([item["path"] for item in payload["unique"]], ["first", "second"])
             self.assertFalse((root / "triage.json.tmp").exists())
+
+    def test_sanitizer_fingerprints_cluster_distinct_artifacts(self) -> None:
+        log = (
+            "ERROR: AddressSanitizer: heap-buffer-overflow\n"
+            "    #0 0x1 in parse /src/parser.c:12:4\n"
+            "SUMMARY: AddressSanitizer: heap-buffer-overflow /src/parser.c:12:4 in parse\n"
+        )
+        first = parse_sanitizer_output(log, Path("crash-001"))[0]
+        second = parse_sanitizer_output(log, Path("crash-002"))[0]
+
+        groups = cluster_findings((first, second))
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].fingerprint, first.fingerprint)
+        self.assertEqual(groups[0].artifacts, ("crash-001", "crash-002"))
+
+    def test_triage_json_includes_finding_groups(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+            (artifacts / "crash-001").write_bytes(b"alpha")
+            log = (
+                "ERROR: AddressSanitizer: heap-buffer-overflow\n"
+                "SUMMARY: AddressSanitizer: heap-buffer-overflow /src/parser.c:12:4 in parse\n"
+            )
+            group = cluster_findings((parse_sanitizer_output(log, Path("crash-001"))[0],))[0]
+            output = root / "triage.json"
+
+            result = triage_artifacts(artifacts)
+            write_triage(TriageResult(result.unique, result.duplicates, (group,)), output)
+            payload = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(payload["finding_groups"][0]["artifacts"], ["crash-001"])
 
 
 if __name__ == "__main__":

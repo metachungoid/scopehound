@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Mapping
 
 from scopehound.errors import ScopeHoundError
+from scopehound.findings import Finding
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,17 @@ class ArtifactRecord:
 class TriageResult:
     unique: tuple[ArtifactRecord, ...]
     duplicates: Mapping[str, tuple[str, ...]]
+    finding_groups: tuple["FindingGroup", ...] = ()
+
+
+@dataclass(frozen=True)
+class FindingGroup:
+    fingerprint: str
+    sanitizer: str
+    kind: str
+    location: str
+    function: str
+    artifacts: tuple[str, ...]
 
 
 def inspect_artifact(path: Path) -> ArtifactRecord:
@@ -57,6 +69,28 @@ def triage_artifacts(directory: Path) -> TriageResult:
     return TriageResult(tuple(canonical_records), duplicates)
 
 
+def cluster_findings(findings: tuple[Finding, ...]) -> tuple[FindingGroup, ...]:
+    grouped: dict[str, list[Finding]] = {}
+    for finding in findings:
+        grouped.setdefault(finding.fingerprint, []).append(finding)
+    result: list[FindingGroup] = []
+    for fingerprint, members in grouped.items():
+        ordered = sorted(members, key=lambda item: (item.artifact or "", item.location, item.function))
+        representative = ordered[0]
+        artifacts = tuple(sorted({item.artifact for item in members if item.artifact}))
+        result.append(
+            FindingGroup(
+                fingerprint=fingerprint,
+                sanitizer=representative.sanitizer,
+                kind=representative.kind,
+                location=representative.location,
+                function=representative.function,
+                artifacts=artifacts,
+            )
+        )
+    return tuple(sorted(result, key=lambda item: item.fingerprint))
+
+
 def write_triage(result: TriageResult, output: Path) -> None:
     payload = {
         "duplicates": {
@@ -69,6 +103,17 @@ def write_triage(result: TriageResult, output: Path) -> None:
                 "size": record.size,
             }
             for record in result.unique
+        ],
+        "finding_groups": [
+            {
+                "artifacts": list(group.artifacts),
+                "fingerprint": group.fingerprint,
+                "function": group.function,
+                "kind": group.kind,
+                "location": group.location,
+                "sanitizer": group.sanitizer,
+            }
+            for group in result.finding_groups
         ],
     }
     _atomic_write(output, json.dumps(payload, indent=2, sort_keys=True) + "\n")

@@ -24,7 +24,13 @@ from scopehound.runner import (
     run_plan,
 )
 from scopehound.scoring import score_opportunity
-from scopehound.triage import inspect_artifact, triage_artifacts, write_triage
+from scopehound.triage import (
+    TriageResult,
+    cluster_findings,
+    inspect_artifact,
+    triage_artifacts,
+    write_triage,
+)
 from scopehound.validation import validate_harnesses, write_validation
 from scopehound.workspace import Workspace
 
@@ -105,6 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     triage = subparsers.add_parser("triage", help="deduplicate local crash artifacts")
     triage.add_argument("--artifacts", required=True, type=Path)
+    triage.add_argument("--findings", type=Path)
     triage.add_argument("--output", required=True, type=Path)
     _json_argument(triage)
 
@@ -283,9 +290,24 @@ def _dispatch(args: argparse.Namespace) -> int:
 
     if args.command == "triage":
         result = triage_artifacts(args.artifacts)
+        if args.findings:
+            findings = load_findings(args.findings)
+            result = TriageResult(
+                result.unique, result.duplicates, cluster_findings(findings)
+            )
         write_triage(result, args.output)
-        payload = {"unique": len(result.unique), "duplicate_groups": len(result.duplicates), "output": str(args.output)}
-        _success(args, payload, f"triaged {len(result.unique)} unique artifacts -> {args.output}")
+        payload = {
+            "unique": len(result.unique),
+            "duplicate_groups": len(result.duplicates),
+            "finding_groups": len(result.finding_groups),
+            "output": str(args.output),
+        }
+        _success(
+            args,
+            payload,
+            f"triaged {len(result.unique)} unique artifacts and "
+            f"{len(result.finding_groups)} finding groups -> {args.output}",
+        )
         return 0
 
     if args.command == "report":

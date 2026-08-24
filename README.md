@@ -179,8 +179,13 @@ Deduplicate byte-identical artifacts and write stable JSON:
 ```bash
 scopehound triage \
   --artifacts .scopehound/targets/example-parser/artifacts \
+  --findings .scopehound/targets/example-parser/findings.json \
   --output .scopehound/targets/example-parser/triage.json
 ```
+
+When `--findings` is supplied, triage adds deterministic sanitizer-fingerprint
+groups so distinct input files that reach the same crash signature can be
+documented as one issue candidate.
 
 Parse an existing sanitizer log directly:
 
