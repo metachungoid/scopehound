@@ -73,7 +73,7 @@ def create_bundle(
     if minimization_path:
         _copy_input(minimization_path, output / "minimization.json")
         files.append("minimization.json")
-        child = _minimized_child(minimization_path)
+        child = _minimized_child(minimization_path, artifact_record.path.parent)
         _copy_input(child, output / f"minimized-{child.name}")
         files.append(f"minimized-{child.name}")
     if campaign_path:
@@ -163,7 +163,7 @@ def _copy_input(source: Path, destination: Path) -> None:
         raise ScopeHoundError("output_failed", f"cannot copy {source}: {error}") from error
 
 
-def _minimized_child(record_path: Path) -> Path:
+def _minimized_child(record_path: Path, artifact_root: Path) -> Path:
     try:
         payload: Any = json.loads(record_path.read_text(encoding="utf-8"))
         child = payload["child"]
@@ -172,6 +172,12 @@ def _minimized_child(record_path: Path) -> Path:
     if not isinstance(child, str):
         raise ScopeHoundError("input_invalid", "minimization child must be a path string")
     path = Path(child).expanduser().resolve()
+    try:
+        path.relative_to(artifact_root.resolve())
+    except ValueError as error:
+        raise ScopeHoundError(
+            "unsafe_path", "minimization child must remain inside the artifact directory"
+        ) from error
     if path.is_symlink() or not path.is_file():
         raise ScopeHoundError("input_invalid", f"minimization child is not a regular file: {path}")
     return path

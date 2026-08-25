@@ -109,6 +109,33 @@ class BundlingTests(unittest.TestCase):
             self.assertTrue((output / "minimization.json").exists())
             self.assertTrue((output / "minimized-crash.minimized").exists())
 
+    def test_rejects_minimization_child_outside_artifact_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_data = valid_manifest_data()
+            manifest_path = root / "target.json"
+            manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+            manifest = validate_manifest(manifest_data)
+            artifacts = root / "artifacts"
+            artifacts.mkdir()
+            artifact = artifacts / "crash"
+            artifact.write_bytes(b"parent")
+            outside = root / "outside"
+            outside.mkdir()
+            secret = outside / "secret.txt"
+            secret.write_text("must not be copied", encoding="utf-8")
+            minimization = root / "minimize.json"
+            minimization.write_text(json.dumps({"child": str(secret)}), encoding="utf-8")
+
+            with self.assertRaisesRegex(ScopeHoundError, "inside the artifact directory"):
+                create_bundle(
+                    manifest_path,
+                    manifest,
+                    artifact,
+                    root / "bundle",
+                    minimization_path=minimization,
+                )
+
     def test_includes_campaign_and_controls_records(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
