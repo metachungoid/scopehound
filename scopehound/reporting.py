@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Mapping
 
 from scopehound.errors import ScopeHoundError
 from scopehound.coverage import CoverageRecord
@@ -18,6 +19,8 @@ def render_report(
     finding: Finding | None = None,
     reproduction: ReproductionResult | None = None,
     coverage: CoverageRecord | None = None,
+    campaign: Mapping[str, object] | None = None,
+    controls: Mapping[str, object] | None = None,
 ) -> str:
     build_command = json.dumps(list(manifest.commands.build))
     fuzz_command = json.dumps(list(manifest.commands.fuzz))
@@ -86,6 +89,16 @@ def render_report(
 - CPU seconds: `{coverage.cpu_seconds}`
 - Findings: `{coverage.finding_count}`
 - Engine statistics: `{json.dumps(dict(coverage.engine_stats), sort_keys=True)}`
+        """
+    campaign_details = ""
+    if campaign:
+        campaign_details = f"""## Campaign provenance
+
+- Campaign ID: `{campaign.get('campaign_id', 'unknown')}`
+- Engine: `{campaign.get('engine', 'unknown')}`
+- Backend: `{campaign.get('backend', 'unknown')}`
+- Manifest digest: `{campaign.get('manifest_digest', 'unknown')}`
+- Recorded stages: `{json.dumps(campaign.get('stages', []), sort_keys=True)}`
 """
     return f"""---
 human_review_required: true
@@ -124,6 +137,10 @@ must complete every review item before disclosure.
 {reproduction_details}
 
 {coverage_details}
+
+{campaign_details}
+
+{_controls_details(controls)}
 
 ## Security analysis
 
@@ -167,3 +184,16 @@ def _code_block(text: str, limit: int = 12_000) -> str:
     while fence in excerpt:
         fence += "`"
     return f"{fence}text\n{excerpt}\n{fence}"
+
+
+def _controls_details(controls: Mapping[str, object] | None) -> str:
+    if not controls:
+        return ""
+    comparison = controls.get("comparison", {})
+    return f"""## Control comparison
+
+- Positive control: `{comparison.get('positive_status', 'inconclusive')}`
+- Fixed control: `{comparison.get('fixed_status', 'inconclusive')}`
+- Current revision: `{comparison.get('current_status', 'inconclusive')}`
+- Current-version observations require human scope, root-cause, duplicate, and disclosure review.
+"""

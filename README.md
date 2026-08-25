@@ -50,6 +50,9 @@ An executable target must include:
 - an optional artifact replay command with an explicit `{artifact}` placeholder
 - optional `commands.harness_build` with `{repo}`, `{source}`, and `{binary}`
   placeholders for reviewed generated harnesses
+- optional grouped command arrays (`commands.prepare`, grouped `build`, grouped
+  `harness_build`, and grouped `fuzz`) for multi-step campaigns; flat arrays
+  remain supported
 - optional `corpus` settings for seed paths, dictionaries, input-size limits,
   and LLVM coverage collection
 - opportunity factors between zero and one
@@ -97,6 +100,75 @@ Executed command output is recorded beneath the target's `logs` directory. A
 fuzz run also parses ASan/UBSan output into `findings.json`; a non-zero fuzz
 exit is accepted as a finding when sanitizer evidence is present, but remains
 an error when no sanitizer finding can be extracted.
+
+## Resumable campaigns and local engines
+
+The `campaign` command creates a target-scoped `campaign.json` and resumes only
+when the manifest and stage input digests still match. It records every command
+argv, result, timeout, backend policy, and failed prerequisite without deleting
+previous attempts:
+
+```bash
+scopehound campaign \
+  --manifest target.json \
+  --workspace .scopehound \
+  --engine standalone \
+  --backend native \
+  --duration 30 \
+  --json
+scopehound campaign \
+  --manifest target.json \
+  --workspace .scopehound \
+  --engine standalone \
+  --backend native \
+  --duration 30 \
+  --execute
+```
+
+`--force-stage STAGE` appends a new attempt when a stage's input digest has
+changed. The `engines` command reports both available engines and explicit
+tool skips:
+
+```bash
+scopehound engines --json
+```
+
+`standalone` runs a generated file-input driver and deterministic, bounded
+mutations, so GCC plus AddressSanitizer/UndefinedBehaviorSanitizer is a useful
+portable baseline when Clang/libFuzzer is unavailable. `libfuzzer` is reported
+as unavailable unless Clang is installed; ScopeHound never silently substitutes
+one engine for another.
+
+## Real-library control validation
+
+The cJSON target pack uses the same reviewed `cJSON_ParseWithLength` harness and
+public malformed-input seed across three local controls: v1.7.17 as a public
+positive control, v1.7.18 as the fixed negative control, and a caller-supplied
+immutable current commit for bounded exploration. The positive control validates
+the pipeline; it does not establish a current-version vulnerability or severity.
+
+Plan the matrix before execution:
+
+```bash
+scopehound controls \
+  --target-pack cjson \
+  --workspace .scopehound-cjson \
+  --engine standalone \
+  --backend native \
+  --duration 5 \
+  --json
+```
+
+Execution requires an authorized manifest and a resolved current commit. The
+matrix writes `controls/comparison.json` with positive/fixed/current statuses,
+exact revision and toolchain metadata, raw/normalized sanitizer evidence, and
+no remote submission path. Current-version artifacts stay in the local
+workspace until a human verifies scope, root cause, reproducibility, duplicates,
+and the designated private disclosure channel.
+
+The reviewed recipe includes cleanup (`cJSON_Delete(json)`) and the standalone
+C driver is available at `scopehound/standalone_driver.c`. The cJSON metadata and
+public references are in `target-packs/cjson.json`.
 
 Local fixture repositories require an additional deliberate flag:
 
@@ -356,6 +428,8 @@ scopehound report \
   --manifest target.json \
   --artifact .scopehound/targets/example-parser/artifacts/crash-001 \
   --findings .scopehound/targets/example-parser/findings.json \
+  --campaign .scopehound/targets/example-parser/campaign.json \
+  --controls .scopehound/targets/cjson/controls/comparison.json \
   --output .scopehound/targets/example-parser/reports/crash-001.md
 ```
 
@@ -374,6 +448,8 @@ scopehound bundle \
   --reproduction .scopehound/targets/example-parser/reproduction.json \
   --minimization .scopehound/targets/example-parser/provenance/minimize.json \
   --coverage .scopehound/targets/example-parser/coverage/CANDIDATE_ID.json \
+  --campaign .scopehound/targets/example-parser/campaign.json \
+  --controls .scopehound/targets/cjson/controls/comparison.json \
   --output-dir .scopehound/targets/example-parser/disclosure-bundle
 ```
 
@@ -404,6 +480,9 @@ private disclosure.
 - `report`: render a human-review Markdown disclosure draft
 - `bundle`: package local evidence into a human-review directory
 - `benchmark`: measure local fixture effectiveness and quality gates
+- `engines`: list local engines and explicit availability/skip reasons
+- `campaign`: run or resume a staged, scope-gated local campaign
+- `controls`: plan a cJSON positive/fixed/current control matrix
 
 Every command supports `--help`; result-producing commands also support
 `--json` for automation.

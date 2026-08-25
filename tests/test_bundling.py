@@ -109,6 +109,32 @@ class BundlingTests(unittest.TestCase):
             self.assertTrue((output / "minimization.json").exists())
             self.assertTrue((output / "minimized-crash.minimized").exists())
 
+    def test_includes_campaign_and_controls_records(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_data = valid_manifest_data()
+            manifest_path = root / "target.json"
+            manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+            manifest = validate_manifest(manifest_data)
+            artifact = root / "crash"
+            artifact.write_bytes(b"parent")
+            campaign = root / "campaign.json"
+            campaign.write_text(json.dumps({"campaign_id": "abc", "engine": "standalone"}), encoding="utf-8")
+            controls = root / "controls.json"
+            controls.write_text(json.dumps({"comparison": {"current_status": "current_not_observed"}}), encoding="utf-8")
+            output = root / "bundle"
+
+            create_bundle(
+                manifest_path, manifest, artifact, output,
+                campaign_path=campaign, controls_path=controls,
+            )
+
+            self.assertTrue((output / "campaign.json").exists())
+            self.assertTrue((output / "controls.json").exists())
+            inventory = json.loads((output / "bundle.json").read_text(encoding="utf-8"))
+            self.assertIn("campaign", inventory)
+            self.assertIn("controls", inventory)
+
 
 if __name__ == "__main__":
     unittest.main()

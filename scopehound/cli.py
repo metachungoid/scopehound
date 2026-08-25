@@ -11,8 +11,11 @@ from typing import Sequence
 from scopehound.bundling import create_bundle
 from scopehound.analyze import import_fuzz_introspector, parse_ast_json, rank_candidates
 from scopehound.benchmark import run_benchmark, write_benchmark_markdown
+from scopehound.campaign import create_campaign, load_campaign, run_stage
 from scopehound.candidates import build_harnesses, run_harness
+from scopehound.controls import run_control_matrix
 from scopehound.coverage import collect_coverage, load_coverage
+from scopehound.engines import list_engines
 from scopehound.known_issues import compare_known_issues, load_known_issues, write_comparisons
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import load_findings, parse_sanitizer_output, write_findings
@@ -39,6 +42,7 @@ from scopehound.triage import (
     triage_artifacts,
     write_triage,
 )
+from scopehound.targetpacks import cjson_target_pack
 from scopehound.validation import validate_harnesses, write_validation
 from scopehound.workspace import Workspace
 
@@ -177,6 +181,30 @@ def build_parser() -> argparse.ArgumentParser:
     _execute_argument(benchmark)
     _json_argument(benchmark)
 
+    engines = subparsers.add_parser("engines", help="list local fuzz engines and availability")
+    _json_argument(engines)
+
+    campaign = subparsers.add_parser("campaign", help="run or resume a staged local campaign")
+    _manifest_argument(campaign)
+    _workspace_argument(campaign)
+    campaign.add_argument("--engine", choices=("standalone", "libfuzzer"), default="standalone")
+    _backend_argument(campaign)
+    campaign.add_argument("--duration", required=True, type=int, metavar="SECONDS")
+    campaign.add_argument("--force-stage", choices=("prepare", "build", "harness_build", "run", "controls"))
+    _execute_argument(campaign)
+    _json_argument(campaign)
+
+    controls = subparsers.add_parser("controls", help="run or plan a target control matrix")
+    controls.add_argument("--target-pack", choices=("cjson",), required=True)
+    controls.add_argument("--manifest", type=Path)
+    _workspace_argument(controls)
+    controls.add_argument("--current-revision", default="current")
+    controls.add_argument("--engine", choices=("standalone", "libfuzzer"), default="standalone")
+    _backend_argument(controls)
+    controls.add_argument("--duration", required=True, type=int, metavar="SECONDS")
+    _execute_argument(controls)
+    _json_argument(controls)
+
     reproduce = subparsers.add_parser(
         "reproduce", help="replay an artifact and compare its sanitizer fingerprint"
     )
@@ -208,6 +236,8 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--findings", type=Path)
     report.add_argument("--reproduction", type=Path)
     report.add_argument("--coverage", type=Path)
+    report.add_argument("--campaign", type=Path)
+    report.add_argument("--controls", type=Path)
     report.add_argument("--output", required=True, type=Path)
     _json_argument(report)
 
@@ -222,6 +252,8 @@ def build_parser() -> argparse.ArgumentParser:
     bundle.add_argument("--reproduction", type=Path)
     bundle.add_argument("--minimization", type=Path)
     bundle.add_argument("--coverage", type=Path)
+    bundle.add_argument("--campaign", type=Path)
+    bundle.add_argument("--controls", type=Path)
     _json_argument(bundle)
 
     return parser
@@ -246,6 +278,71 @@ def entrypoint() -> None:
 
 
 def _dispatch(args: argparse.Namespace) -> int:
+    if args.command == "engines":
+        engines = [
+            {"name": item.name, "available": item.available, "executable": item.executable, "reason": item.reason}
+            for item in list_engines()
+        ]
+        _success(args, {"engines": engines}, "\n".join(
+            f"{item['name']}: {'available' if item['available'] else 'unavailable'} ({item['reason']})"
+            for item in engines
+        ))
+        return 0
+
+    if args.command == "campaign":
+        manifest = load_manifest(args.manifest)
+        workspace = Workspace(args.workspace)
+        engine_info = next(item for item in list_engines() if item.name == args.engine)
+        if not engine_info.available:
+            raise ScopeHoundError("engine_unavailable", engine_info.reason)
+        campaign_path = workspace.campaign_file(manifest.target.name)
+        state = load_campaign(campaign_path) if campaign_path.exists() else create_campaign(
+            manifest, workspace, engine=args.engine, backend=args.backend
+        )
+        stages = (
+            ("prepare", manifest.commands.prepare_steps),
+            ("build", manifest.commands.build_steps),
+            ("harness_build", manifest.commands.harness_build_steps),
+        )
+        for stage, group in stages:
+            if group:
+                state = run_stage(
+                    state, manifest, workspace, stage, group,
+                    execute=args.execute, force=args.force_stage == stage,
+                )
+        if manifest.commands.harness_build_steps and manifest.commands.fuzz_steps:
+            state = run_stage(
+                state, manifest, workspace, "run", manifest.commands.fuzz_steps,
+                execute=args.execute, force=args.force_stage == "run",
+            )
+        payload = {
+            "campaign_id": state.campaign_id, "target": state.target,
+            "executed": bool(args.execute), "engine": state.engine, "backend": state.backend,
+            "stages": [{"stage": item.stage, "status": item.status, "attempts": item.attempts} for item in state.stages],
+            "output": str(campaign_path),
+        }
+        _success(args, payload, f"campaign {state.campaign_id}: {len(state.stages)} stages -> {campaign_path}")
+        return 0
+
+    if args.command == "controls":
+        if args.execute and args.manifest is None:
+            raise ScopeHoundError("authorization_required", "--manifest is required for control execution")
+        if args.manifest is not None:
+            manifest = load_manifest(args.manifest)
+            if args.execute and manifest.authorization.status != "authorized":
+                raise ScopeHoundError("authorization_required", "control execution requires an authorized manifest")
+        pack = cjson_target_pack(args.current_revision)
+        result = run_control_matrix(
+            pack, Workspace(args.workspace), engine=args.engine, backend=args.backend,
+            duration_seconds=args.duration, execute=args.execute,
+        )
+        _success(
+            args,
+            {"target": result["target"], "comparison": result["comparison"], "output": str(Workspace(args.workspace).controls_dir(str(result["target"])) / "comparison.json")},
+            f"control matrix {result['target']} -> {Workspace(args.workspace).controls_dir(str(result['target'])) / 'comparison.json'}",
+        )
+        return 0
+
     if args.command == "validate":
         manifest = load_manifest(args.manifest)
         _success(args, {"target": manifest.target.name}, f"valid: {manifest.target.name}")
@@ -587,6 +684,14 @@ def _dispatch(args: argparse.Namespace) -> int:
                 manifest, artifact, artifact.path.name, finding, reproduction,
                 load_coverage(args.coverage),
             )
+        campaign_record = _load_json_mapping(args.campaign) if args.campaign else None
+        controls_record = _load_json_mapping(args.controls) if args.controls else None
+        if campaign_record or controls_record:
+            report = render_report(
+                manifest, artifact, artifact.path.name, finding, reproduction,
+                load_coverage(args.coverage) if args.coverage else None,
+                campaign_record, controls_record,
+            )
         write_report(report, args.output)
         _success(args, {"output": str(args.output), "sha256": artifact.sha256}, f"report draft: {args.output}")
         return 0
@@ -603,6 +708,8 @@ def _dispatch(args: argparse.Namespace) -> int:
             args.reproduction,
             args.minimization,
             args.coverage,
+            args.campaign,
+            args.controls,
         )
         _success(
             args,
@@ -748,3 +855,13 @@ def _write_json_output(payload: object, output: Path) -> None:
         temporary.replace(output)
     except OSError as error:
         raise ScopeHoundError("output_failed", f"cannot write output {output}: {error}") from error
+
+
+def _load_json_mapping(path: Path) -> dict[str, object]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ScopeHoundError("input_invalid", f"cannot read JSON record {path}: {error}") from error
+    if not isinstance(payload, dict):
+        raise ScopeHoundError("input_invalid", f"JSON record must be an object: {path}")
+    return payload

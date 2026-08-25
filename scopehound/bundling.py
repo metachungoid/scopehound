@@ -32,6 +32,8 @@ def create_bundle(
     reproduction_path: Path | None = None,
     minimization_path: Path | None = None,
     coverage_path: Path | None = None,
+    campaign_path: Path | None = None,
+    controls_path: Path | None = None,
 ) -> BundleSummary:
     """Create a local, human-reviewable evidence bundle without transmitting it."""
     require_authorized(manifest)
@@ -48,6 +50,8 @@ def create_bundle(
     findings = _load_optional_findings(findings_path)
     finding = _select_finding(findings, artifact_record.path.name)
     reproduction = _load_optional_reproduction(reproduction_path, artifact_record.path.name)
+    campaign_record = _load_optional_mapping(campaign_path)
+    controls_record = _load_optional_mapping(controls_path)
 
     files: list[str] = ["bundle.json"]
     _copy_input(manifest_path, output / "manifest.json")
@@ -72,6 +76,12 @@ def create_bundle(
         child = _minimized_child(minimization_path)
         _copy_input(child, output / f"minimized-{child.name}")
         files.append(f"minimized-{child.name}")
+    if campaign_path:
+        _copy_input(campaign_path, output / "campaign.json")
+        files.append("campaign.json")
+    if controls_path:
+        _copy_input(controls_path, output / "controls.json")
+        files.append("controls.json")
 
     report_path = output / "report.md"
     write_report(
@@ -81,6 +91,8 @@ def create_bundle(
             artifact_record.path.name,
             finding,
             reproduction,
+            campaign=campaign_record,
+            controls=controls_record,
         ),
         report_path,
     )
@@ -101,6 +113,10 @@ def create_bundle(
             "revision": manifest.target.revision,
         },
     }
+    if campaign_record:
+        inventory["campaign"] = campaign_record
+    if controls_record:
+        inventory["controls"] = controls_record
     _atomic_write(output / "bundle.json", json.dumps(inventory, indent=2, sort_keys=True) + "\n")
     return BundleSummary(output, tuple(sorted(files)), artifact_record.sha256)
 
@@ -119,6 +135,18 @@ def _load_optional_reproduction(path: Path | None, artifact_name: str) -> Reprod
             f"reproduction artifact does not match requested artifact: {reproduction.artifact}",
         )
     return reproduction
+
+
+def _load_optional_mapping(path: Path | None) -> dict[str, object] | None:
+    if path is None:
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ScopeHoundError("input_invalid", f"cannot read JSON record {path}: {error}") from error
+    if not isinstance(payload, dict):
+        raise ScopeHoundError("input_invalid", f"JSON record must be an object: {path}")
+    return payload
 
 
 def _select_finding(findings: tuple[Finding, ...], artifact_name: str) -> Finding | None:

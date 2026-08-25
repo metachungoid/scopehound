@@ -76,6 +76,26 @@ class ReportingTests(unittest.TestCase):
             self.assertEqual(output.read_text(encoding="utf-8"), "new report\n")
             self.assertFalse((Path(temp_dir) / "report.md.tmp").exists())
 
+    def test_report_includes_campaign_and_control_comparison(self) -> None:
+        manifest = validate_manifest(valid_manifest_data())
+        artifact = ArtifactRecord(Path("crash-001"), hashlib.sha256(b"boom").hexdigest(), 4)
+
+        report = render_report(
+            manifest,
+            artifact,
+            "crash-001",
+            campaign={"campaign_id": "abc", "engine": "standalone", "backend": "native", "stages": []},
+            controls={"comparison": {
+                "positive_status": "positive_reproduced",
+                "fixed_status": "fixed_not_reproduced",
+                "current_status": "current_not_observed",
+            }},
+        )
+
+        self.assertIn("Campaign provenance", report)
+        self.assertIn("positive_reproduced", report)
+        self.assertIn("current_not_observed", report)
+
 
 if __name__ == "__main__":
     unittest.main()
