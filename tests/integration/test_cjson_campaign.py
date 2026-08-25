@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import shutil
+import tempfile
 import unittest
+from pathlib import Path
 
 from scopehound.cjson_validation import run_cjson_validation
 from scopehound.errors import ScopeHoundError
@@ -36,16 +38,24 @@ class CjsonCampaignIntegrationTests(unittest.TestCase):
         "gcc and git are required for the real-library validation",
     )
     def test_cjson_positive_reproduces_and_fixed_does_not(self) -> None:
-        try:
-            result = run_cjson_validation(
-            duration_seconds=2,
-            execute=True,
-            manifest=_authorized_cjson_manifest(),
-        )
-        except ScopeHoundError as error:
-            if error.category in {"command_failed", "integration_unavailable"}:
-                self.skipTest(error.message)
-            raise
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Path(temp_dir)
+            try:
+                result = run_cjson_validation(
+                    workspace=workspace,
+                    duration_seconds=2,
+                    execute=True,
+                    manifest=_authorized_cjson_manifest(),
+                )
+            except ScopeHoundError as error:
+                if error.category in {"command_failed", "integration_unavailable"}:
+                    self.skipTest(error.message)
+                raise
+
+            comparison = workspace / "targets" / "cjson" / "controls" / "comparison.json"
+            self.assertEqual(result["comparison_path"], str(comparison))
+            self.assertTrue(comparison.is_file())
+            self.assertTrue((comparison.parent / "positive" / "record.json").is_file())
 
         self.assertEqual(result["positive"]["status"], "positive_reproduced")
         self.assertEqual(result["fixed"]["status"], "fixed_not_reproduced")

@@ -55,6 +55,7 @@ def _run_in_workspace(pack: Mapping[str, object], root: Path, duration_seconds: 
     seed_path = root / "seed.bin"
     seed = bytes(pack["seed"])
     seed_path.write_bytes(seed)
+    controls_dir = root / "controls"
     records: dict[str, Mapping[str, object]] = {}
     for control in pack["controls"]:  # type: ignore[union-attr]
         if not isinstance(control, ControlRevision):
@@ -62,7 +63,7 @@ def _run_in_workspace(pack: Mapping[str, object], root: Path, duration_seconds: 
         _checkout(repository, control.requested_revision)
         commit = resolve_revision(repository)
         records[control.role] = _run_control(
-            repository, root / control.role, seed_path, control, commit, duration_seconds
+            repository, controls_dir / control.role, seed_path, control, commit, duration_seconds
         )
     comparison = {
         "positive_status": records["positive"]["status"],
@@ -74,8 +75,9 @@ def _run_in_workspace(pack: Mapping[str, object], root: Path, duration_seconds: 
         "positive": records["positive"], "fixed": records["fixed"], "current": records["current"],
         "comparison": comparison, "published_paths": [],
         "input_sha256": hashlib.sha256(seed).hexdigest(),
+        "comparison_path": str(controls_dir / "comparison.json"),
     }
-    _write_json(result, root / "comparison.json")
+    _write_json(result, controls_dir / "comparison.json")
     return result
 
 
