@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import platform
 import re
 import subprocess
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping
 
 from scopehound.errors import ScopeHoundError
+from scopehound.campaign import manifest_digest as campaign_manifest_digest
 from scopehound.manifest import Manifest
 from scopehound.runner import CommandResult
 
@@ -95,20 +95,7 @@ def create_provenance(
 
 
 def manifest_digest(manifest: Manifest) -> str:
-    payload = {
-        "schema_version": manifest.schema_version,
-        "target": asdict(manifest.target),
-        "authorization": asdict(manifest.authorization),
-        "commands": {
-            "build": list(manifest.commands.build), "fuzz": list(manifest.commands.fuzz),
-            "reproduce": list(manifest.commands.reproduce) if manifest.commands.reproduce else None,
-            "harness_build": list(manifest.commands.harness_build) if manifest.commands.harness_build else None,
-        },
-        "environment": dict(manifest.environment),
-        "corpus": asdict(manifest.corpus),
-        "opportunity": asdict(manifest.opportunity),
-    }
-    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+    return campaign_manifest_digest(manifest)
 
 
 def normalize_stack(frames: tuple[str, ...] | list[str]) -> tuple[str, ...]:
