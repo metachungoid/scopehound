@@ -16,6 +16,9 @@ class HarnessCandidate:
     confidence: str
     status: str
     source: str
+    qualified_name: str | None = None
+    source_owner: str | None = None
+    rank_score: float | None = None
 
 
 _DECLARATION = re.compile(

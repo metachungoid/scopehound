@@ -9,12 +9,13 @@ from pathlib import Path
 from typing import Sequence
 
 from scopehound.bundling import create_bundle
+from scopehound.analyze import import_fuzz_introspector, parse_ast_json, rank_candidates
 from scopehound.candidates import build_harnesses, run_harness
 from scopehound.coverage import collect_coverage, load_coverage
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import load_findings, parse_sanitizer_output, write_findings
 from scopehound.discovery import discover_harnesses, write_harnesses
-from scopehound.harness import generate_harnesses, write_harnesses as write_generated_harnesses
+from scopehound.harness import HarnessCandidate, generate_harnesses, write_harnesses as write_generated_harnesses
 from scopehound.manifest import Manifest, load_manifest
 from scopehound.reporting import render_report, write_report
 from scopehound.reproduction import load_reproduction, reproduce_finding, write_reproduction
@@ -129,6 +130,17 @@ def build_parser() -> argparse.ArgumentParser:
     coverage.add_argument("--cpu-seconds", type=float, default=0.0)
     coverage.add_argument("--finding-count", type=int, default=0)
     _json_argument(coverage)
+
+    analyze = subparsers.add_parser(
+        "analyze", help="rank generated candidates using local AST and reachability metadata"
+    )
+    _manifest_argument(analyze)
+    analyze.add_argument("--repo", required=True, type=Path)
+    analyze.add_argument("--harnesses", type=Path)
+    analyze.add_argument("--ast", type=Path)
+    analyze.add_argument("--introspector", type=Path)
+    analyze.add_argument("--output", required=True, type=Path)
+    _json_argument(analyze)
 
     reproduce = subparsers.add_parser(
         "reproduce", help="replay an artifact and compare its sanitizer fingerprint"
@@ -359,6 +371,33 @@ def _dispatch(args: argparse.Namespace) -> int:
         )
         return 0
 
+    if args.command == "analyze":
+        manifest = load_manifest(args.manifest)
+        candidates = _load_analysis_candidates(args.harnesses) if args.harnesses else _generated_candidates(args.repo)
+        ast_functions = parse_ast_json(args.ast) if args.ast else ()
+        introspector = import_fuzz_introspector(args.introspector) if args.introspector else None
+        reachability = dict(introspector.reachability) if introspector else {}
+        covered = dict(introspector.covered) if introspector else {}
+        ranked = rank_candidates(
+            candidates, authorized=manifest.authorization.status == "authorized",
+            reachability=reachability, covered=covered,
+        )
+        payload = {
+            "target": manifest.target.name,
+            "ast_functions": [
+                {"name": item.name, "qualified_name": item.qualified_name, "file": item.file, "line": item.line, "parameters": list(item.parameters), "namespace": item.namespace}
+                for item in ast_functions
+            ],
+            "introspector": {"source": introspector.source, "reachability": reachability, "covered": covered} if introspector else None,
+            "ranked": [
+                {"path": item.path, "function": item.function, "score": item.score, "authorization": item.authorization, "buildability": item.buildability, "reachability": item.reachability, "coverage_gap": item.coverage_gap, "input_suitability": item.input_suitability, "duplicate_risk": item.duplicate_risk}
+                for item in ranked
+            ],
+        }
+        _write_json_output(payload, args.output)
+        _success(args, {"count": len(ranked), "output": str(args.output)}, f"ranked {len(ranked)} candidates -> {args.output}")
+        return 0
+
     if args.command == "reproduce":
         manifest = load_manifest(args.manifest)
         workspace = Workspace(args.workspace)
@@ -554,3 +593,39 @@ def _target_path(workspace: Workspace, target_name: str, requested: Path) -> Pat
             "unsafe_path", "output must remain inside the target workspace"
         ) from error
     return resolved
+
+
+def _generated_candidates(repo: Path) -> tuple[HarnessCandidate, ...]:
+    return generate_harnesses(repo)
+
+
+def _load_analysis_candidates(path: Path) -> tuple[HarnessCandidate, ...]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ScopeHoundError("input_invalid", f"cannot read harness candidates: {error}") from error
+    if not isinstance(payload, list):
+        raise ScopeHoundError("input_invalid", "harness candidates must be an array")
+    candidates: list[HarnessCandidate] = []
+    for item in payload:
+        if not isinstance(item, dict) or not isinstance(item.get("generated_file"), str):
+            raise ScopeHoundError("input_invalid", "harness candidate lacks generated_file")
+        path_value = item.get("path", item["generated_file"])
+        candidates.append(
+            HarnessCandidate(
+                path=Path(str(path_value)), function=str(item.get("function", Path(item["generated_file"]).stem)),
+                parameters=str(item.get("parameters", "")), confidence=str(item.get("confidence", "low")),
+                status=str(item.get("status", "needs_build_validation")), source="",
+            )
+        )
+    return tuple(candidates)
+
+
+def _write_json_output(payload: object, output: Path) -> None:
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(output.name + ".tmp")
+    try:
+        temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(output)
+    except OSError as error:
+        raise ScopeHoundError("output_failed", f"cannot write output {output}: {error}") from error

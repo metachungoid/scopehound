@@ -36,6 +36,7 @@ class CliTests(unittest.TestCase):
             "generate-harnesses", "validate-harnesses", "reproduce", "findings", "triage", "report", "bundle",
             "build-harnesses", "run-harness",
             "coverage",
+            "analyze",
         ):
             self.assertIn(command, output.getvalue())
 
@@ -328,6 +329,32 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(record["after"]["count"], 2)
         self.assertEqual(record["engine_stats"]["number_of_executed_units"], 3)
+
+    def test_analyze_command_writes_ranked_local_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            data = valid_manifest_data()
+            data["authorization"]["status"] = "authorized"  # type: ignore[index]
+            manifest_path = self._write_manifest(root, data)
+            repo = root / "repo"
+            repo.mkdir()
+            (repo / "parser.h").write_text("int parse(const char *p, size_t n);\n", encoding="utf-8")
+            harnesses = root / "harnesses.json"
+            harnesses.write_text(json.dumps([{"generated_file": "parse_fuzzer.cc", "path": "parser.h", "function": "parse", "confidence": "high"}]), encoding="utf-8")
+            introspector = root / "introspector.json"
+            introspector.write_text(json.dumps({"functions": [{"name": "parse", "reachability": 0.9, "covered": False}]}), encoding="utf-8")
+            output = root / "analysis.json"
+
+            code, _, _ = self._run(
+                "analyze", "--manifest", str(manifest_path), "--repo", str(repo),
+                "--harnesses", str(harnesses), "--introspector", str(introspector),
+                "--output", str(output),
+            )
+            payload = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["ranked"][0]["function"], "parse")
+        self.assertEqual(payload["ranked"][0]["coverage_gap"], 1.0)
 
     def test_reproduce_command_updates_matching_finding(self) -> None:
         sanitizer_log = (
