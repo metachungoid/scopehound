@@ -24,6 +24,49 @@ class ManifestTests(unittest.TestCase):
             "CC": "clang",
             "CFLAGS": "-O1 -g -fsanitize=address,undefined",
         })
+        self.assertIsNone(manifest.commands.harness_build)
+        self.assertEqual(manifest.corpus.max_input_size, 1_048_576)
+        self.assertEqual(manifest.corpus.coverage_mode, "none")
+
+    def test_accepts_harness_build_placeholders_and_corpus_config(self) -> None:
+        data = valid_manifest_data()
+        data["commands"]["harness_build"] = [  # type: ignore[index]
+            "clang++", "{source}", "-o", "{binary}", "-I", "{repo}"
+        ]
+        data["corpus"] = {  # type: ignore[index]
+            "seed_dir": "seeds", "dictionary": "parser.dict",
+            "max_input_size": 4096, "coverage_mode": "llvm"
+        }
+
+        manifest = validate_manifest(data)
+
+        self.assertEqual(manifest.commands.harness_build[1], "{source}")
+        self.assertEqual(manifest.corpus.seed_dir, "seeds")
+        self.assertEqual(manifest.corpus.dictionary, "parser.dict")
+        self.assertEqual(manifest.corpus.max_input_size, 4096)
+        self.assertEqual(manifest.corpus.coverage_mode, "llvm")
+
+    def test_rejects_unknown_or_missing_harness_placeholders(self) -> None:
+        for command in (
+            ["clang++", "{source}", "-o", "{binary}", "{unknown}"],
+            ["clang++", "{source}", "-o", "output"],
+            ["clang++", "{source}", "{source}", "-o", "{binary}"],
+        ):
+            with self.subTest(command=command):
+                data = valid_manifest_data()
+                data["commands"]["harness_build"] = command  # type: ignore[index]
+                self._assert_manifest_invalid(data)
+
+    def test_rejects_invalid_corpus_configuration(self) -> None:
+        for corpus in (
+            {"max_input_size": 0},
+            {"max_input_size": 4096, "coverage_mode": "remote"},
+            {"max_input_size": 4096, "seed_dir": "/absolute"},
+        ):
+            with self.subTest(corpus=corpus):
+                data = valid_manifest_data()
+                data["corpus"] = corpus  # type: ignore[index]
+                self._assert_manifest_invalid(data)
 
     def test_load_manifest_reads_json(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

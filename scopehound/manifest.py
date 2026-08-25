@@ -23,6 +23,11 @@ _OPPORTUNITY_FIELDS = (
     "build_reproducibility",
     "duplicate_risk",
 )
+SUPPORTED_PLACEHOLDERS = frozenset(
+    {"repo", "source", "binary", "corpus", "dictionary", "artifact", "duration"}
+)
+_PLACEHOLDER = re.compile(r"\{([^{}]+)\}")
+_COVERAGE_MODES = {"none", "llvm"}
 
 
 @dataclass(frozen=True)
@@ -47,6 +52,15 @@ class Commands:
     build: tuple[str, ...]
     fuzz: tuple[str, ...]
     reproduce: tuple[str, ...] | None = None
+    harness_build: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True)
+class CorpusConfig:
+    seed_dir: str | None = None
+    dictionary: str | None = None
+    max_input_size: int = 1_048_576
+    coverage_mode: str = "none"
 
 
 @dataclass(frozen=True)
@@ -68,6 +82,7 @@ class Manifest:
     commands: Commands
     environment: Mapping[str, str]
     opportunity: Opportunity
+    corpus: CorpusConfig
 
 
 def load_manifest(path: Path) -> Manifest:
@@ -121,6 +136,21 @@ def validate_manifest(data: object) -> Manifest:
             build=_command(commands_data.get("build"), "commands.build"),
             fuzz=_command(commands_data.get("fuzz"), "commands.fuzz"),
             reproduce=_reproduction_command(commands_data.get("reproduce")),
+            harness_build=_harness_build_command(commands_data.get("harness_build")),
+        )
+
+        corpus_data = _mapping(root.get("corpus", {}), "corpus")
+        corpus = CorpusConfig(
+            seed_dir=_relative_optional_path(corpus_data.get("seed_dir"), "corpus.seed_dir"),
+            dictionary=_relative_optional_path(
+                corpus_data.get("dictionary"), "corpus.dictionary"
+            ),
+            max_input_size=_positive_int(
+                corpus_data.get("max_input_size", 1_048_576), "corpus.max_input_size"
+            ),
+            coverage_mode=_coverage_mode(
+                corpus_data.get("coverage_mode", "none"), "corpus.coverage_mode"
+            ),
         )
 
         environment_data = _mapping(root.get("environment", {}), "environment")
@@ -144,6 +174,7 @@ def validate_manifest(data: object) -> Manifest:
             commands=commands,
             environment=MappingProxyType(environment),
             opportunity=opportunity,
+            corpus=corpus,
         )
     except ScopeHoundError:
         raise
@@ -178,17 +209,69 @@ def _string_tuple(value: object, field: str) -> tuple[str, ...]:
 def _command(value: object, field: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not value:
         _invalid(f"{field} must be a non-empty argument array")
-    return tuple(_string(item, f"{field} argument") for item in value)
+    command = tuple(_string(item, f"{field} argument") for item in value)
+    _validate_command_placeholders(command, field)
+    return command
 
 
 def _reproduction_command(value: object) -> tuple[str, ...] | None:
     if value is None:
         return None
     command = _command(value, "commands.reproduce")
-    placeholders = sum(argument.count("{artifact}") for argument in command)
-    if placeholders != 1:
-        _invalid("commands.reproduce must contain exactly one {artifact} placeholder")
+    _validate_command_placeholders(command, "commands.reproduce", required=("artifact",))
     return command
+
+
+def _harness_build_command(value: object) -> tuple[str, ...] | None:
+    if value is None:
+        return None
+    command = _command(value, "commands.harness_build")
+    _validate_command_placeholders(
+        command, "commands.harness_build", required=("source", "binary")
+    )
+    return command
+
+
+def _validate_command_placeholders(
+    command: tuple[str, ...], field: str, required: tuple[str, ...] = ()
+) -> None:
+    counts = {name: 0 for name in SUPPORTED_PLACEHOLDERS}
+    for argument in command:
+        for match in _PLACEHOLDER.finditer(argument):
+            name = match.group(1)
+            if name not in SUPPORTED_PLACEHOLDERS:
+                _invalid(f"{field} uses unsupported placeholder {{{name}}}")
+            counts[name] += 1
+        if "{" in argument or "}" in argument:
+            leftovers = _PLACEHOLDER.sub("", argument).replace("{{", "").replace("}}", "")
+            if "{" in leftovers or "}" in leftovers:
+                _invalid(f"{field} contains malformed placeholder syntax")
+    for name in required:
+        if counts[name] != 1:
+            _invalid(f"{field} must contain exactly one {{{name}}} placeholder")
+
+
+def _relative_optional_path(value: object, field: str) -> str | None:
+    if value is None:
+        return None
+    path = _string(value, field)
+    parsed = Path(path)
+    if parsed.is_absolute() or any(part == ".." for part in parsed.parts):
+        _invalid(f"{field} must be a relative path inside the target workspace")
+    return path
+
+
+def _positive_int(value: object, field: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1 or value > 64 * 1024 * 1024:
+        _invalid(f"{field} must be an integer between 1 and 67108864")
+    return value
+
+
+def _coverage_mode(value: object, field: str) -> str:
+    mode = _string(value, field)
+    if mode not in _COVERAGE_MODES:
+        _invalid(f"{field} must be one of: {', '.join(sorted(_COVERAGE_MODES))}")
+    return mode
 
 
 def _factor(value: object, field: str) -> float:

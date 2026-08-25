@@ -29,6 +29,10 @@
       "{artifact}"
     ]
   },
+  "corpus": {
+    "max_input_size": 1048576,
+    "coverage_mode": "none"
+  },
   "environment": {
     "CC": "clang",
     "CXX": "clang++",

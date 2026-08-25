@@ -20,10 +20,22 @@ class WorkspaceTests(unittest.TestCase):
             target = workspace.target_dir("parser")
             logs = workspace.logs_dir("parser")
             artifacts = workspace.artifacts_dir("parser")
+            generated = workspace.generated_dir("parser")
+            binaries = workspace.binaries_dir("parser")
+            corpus = workspace.corpus_dir("parser")
+            coverage = workspace.coverage_dir("parser")
+            toolchain = workspace.toolchain_dir("parser")
+            provenance = workspace.provenance_dir("parser")
 
             self.assertEqual(target, workspace.root / "targets" / "parser")
             self.assertEqual(logs, target / "logs")
             self.assertEqual(artifacts, target / "artifacts")
+            self.assertEqual(generated, target / "generated")
+            self.assertEqual(binaries, target / "binaries")
+            self.assertEqual(corpus, target / "corpus")
+            self.assertEqual(coverage, target / "coverage")
+            self.assertEqual(toolchain, target / "toolchain")
+            self.assertEqual(provenance, target / "provenance")
 
     def test_path_traversal_slug_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

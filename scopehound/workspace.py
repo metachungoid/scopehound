@@ -31,6 +31,24 @@ class Workspace:
     def artifacts_dir(self, name: str) -> Path:
         return self._contained(self.target_dir(name) / "artifacts")
 
+    def generated_dir(self, name: str) -> Path:
+        return self._contained(self.target_dir(name) / "generated")
+
+    def binaries_dir(self, name: str) -> Path:
+        return self._contained(self.target_dir(name) / "binaries")
+
+    def corpus_dir(self, name: str) -> Path:
+        return self._contained(self.target_dir(name) / "corpus")
+
+    def coverage_dir(self, name: str) -> Path:
+        return self._contained(self.target_dir(name) / "coverage")
+
+    def toolchain_dir(self, name: str) -> Path:
+        return self._contained(self.target_dir(name) / "toolchain")
+
+    def provenance_dir(self, name: str) -> Path:
+        return self._contained(self.target_dir(name) / "provenance")
+
     def findings_file(self, name: str) -> Path:
         return self._contained(self.target_dir(name) / "findings.json")
 
