@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Sequence
 
 from scopehound.bundling import create_bundle
+from scopehound.candidates import build_harnesses, run_harness
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import load_findings, parse_sanitizer_output, write_findings
 from scopehound.discovery import discover_harnesses, write_harnesses
@@ -91,6 +92,26 @@ def build_parser() -> argparse.ArgumentParser:
     validation.add_argument("--compiler", default="c++")
     _execute_argument(validation)
     _json_argument(validation)
+
+    candidate_build = subparsers.add_parser(
+        "build-harnesses", help="compile generated harness candidates"
+    )
+    _manifest_argument(candidate_build)
+    _workspace_argument(candidate_build)
+    candidate_build.add_argument("--harnesses-dir", required=True, type=Path)
+    candidate_build.add_argument("--compiler", help="recorded compiler override for future toolchains")
+    _execute_argument(candidate_build)
+    _json_argument(candidate_build)
+
+    candidate_run = subparsers.add_parser(
+        "run-harness", help="run one built generated harness for a bounded duration"
+    )
+    _manifest_argument(candidate_run)
+    _workspace_argument(candidate_run)
+    candidate_run.add_argument("--candidate", required=True)
+    candidate_run.add_argument("--duration", required=True, type=int, metavar="SECONDS")
+    _execute_argument(candidate_run)
+    _json_argument(candidate_run)
 
     reproduce = subparsers.add_parser(
         "reproduce", help="replay an artifact and compare its sanitizer fingerprint"
@@ -256,6 +277,44 @@ def _dispatch(args: argparse.Namespace) -> int:
                 },
             },
             f"validated {len(results)} generated harnesses -> {output}",
+        )
+        return 0
+
+    if args.command == "build-harnesses":
+        manifest = load_manifest(args.manifest)
+        workspace = Workspace(args.workspace)
+        results = build_harnesses(
+            manifest, workspace, args.harnesses_dir, execute=args.execute
+        )
+        statuses = {status: sum(item.status == status for item in results) for status in sorted({item.status for item in results})}
+        output = workspace.generated_dir(manifest.target.name) / "harness-build.json"
+        if any(item.status == "build_failed" for item in results):
+            raise ScopeHoundError("command_failed", f"one or more generated harnesses failed to build; see {output}")
+        _success(
+            args,
+            {"count": len(results), "statuses": statuses, "output": str(output)},
+            f"processed {len(results)} generated harnesses -> {output}",
+        )
+        return 0
+
+    if args.command == "run-harness":
+        manifest = load_manifest(args.manifest)
+        workspace = Workspace(args.workspace)
+        result = run_harness(
+            manifest, workspace, args.candidate, args.duration, execute=args.execute
+        )
+        if args.execute and result.findings:
+            findings_path = workspace.findings_file(manifest.target.name)
+            existing = load_findings(findings_path) if findings_path.exists() else ()
+            merged = {item.fingerprint: item for item in (*existing, *result.findings)}
+            write_findings(tuple(merged[key] for key in sorted(merged)), findings_path)
+        if args.execute and result.status == "failed":
+            raise ScopeHoundError("command_failed", f"harness exited {result.returncode} without a sanitizer finding")
+        output = workspace.provenance_dir(manifest.target.name) / f"harness-{result.candidate_id}.json"
+        _success(
+            args,
+            {"candidate": result.candidate_id, "status": result.status, "findings": len(result.findings), "output": str(output)},
+            f"harness {result.candidate_id}: {result.status} -> {output}",
         )
         return 0
 

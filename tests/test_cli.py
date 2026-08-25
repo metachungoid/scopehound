@@ -34,6 +34,7 @@ class CliTests(unittest.TestCase):
         for command in (
             "validate", "score", "prepare", "build", "fuzz", "discover",
             "generate-harnesses", "validate-harnesses", "reproduce", "findings", "triage", "report", "bundle",
+            "build-harnesses", "run-harness",
         ):
             self.assertIn(command, output.getvalue())
 
@@ -264,6 +265,41 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(payload[0]["status"], "planned")
+
+    def test_build_and_run_harness_commands_write_candidate_records(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            data = valid_manifest_data()
+            data["commands"]["harness_build"] = [  # type: ignore[index]
+                sys.executable, "-c", "from pathlib import Path; Path(r'{source}'); Path(r'{binary}').write_text('ok')",
+            ]
+            data["commands"]["fuzz"] = [  # type: ignore[index]
+                sys.executable, "-c", "print('done')", "{binary}", "{corpus}", "{duration}",
+            ]
+            manifest_path = self._write_manifest(root, data)
+            workspace = root / "state"
+            target = workspace / "targets" / "example-parser"
+            (target / "repo").mkdir(parents=True)
+            harnesses = target / "generated-candidates"
+            harnesses.mkdir()
+            (harnesses / "harnesses.json").write_text(
+                json.dumps([{"generated_file": "parse.cc", "function": "parse"}]), encoding="utf-8"
+            )
+            (harnesses / "parse.cc").write_text("// generated\n", encoding="utf-8")
+
+            build_code, _, _ = self._run(
+                "build-harnesses", "--manifest", str(manifest_path), "--workspace", str(workspace),
+                "--harnesses-dir", str(harnesses), "--execute",
+            )
+            run_code, _, _ = self._run(
+                "run-harness", "--manifest", str(manifest_path), "--workspace", str(workspace),
+                "--candidate", json.loads((target / "generated" / "harness-build.json").read_text())[0]["candidate_id"],
+                "--duration", "1", "--execute",
+            )
+
+            self.assertEqual(build_code, 0)
+            self.assertEqual(run_code, 0)
+            self.assertTrue(list((target / "provenance").glob("harness-*.json")))
 
     def test_reproduce_command_updates_matching_finding(self) -> None:
         sanitizer_log = (
