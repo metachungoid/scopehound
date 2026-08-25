@@ -205,6 +205,19 @@ scopehound prepare \
   --execute
 ```
 
+Additional retained control reports are available under
+[`docs/evidence/`](docs/evidence/):
+
+- [`cJSON v1.7.17`](docs/evidence/cjson-v1.7.17-known-control.md) — known
+  parser heap-buffer-overflow control.
+- [`libyaml`](docs/evidence/libyaml-known-double-free.md) — known event-
+  ownership double-free control.
+- [`zlib v1.2.12`](docs/evidence/zlib-cve-2022-37434-known-control.md) —
+  CVE-2022-37434 gzip-header extra-field control, compared with v1.2.13.
+
+These are historical validation artifacts for the pipeline. They do not claim
+new vulnerabilities, and ScopeHound does not transmit findings to maintainers.
+
 ## Triage and report drafts
 
 After preparation, inspect the checkout for existing libFuzzer and OSS-Fuzz
