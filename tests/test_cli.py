@@ -33,7 +33,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 0)
         for command in (
             "validate", "score", "prepare", "build", "fuzz", "discover",
-            "generate-harnesses", "validate-harnesses", "reproduce", "findings", "triage", "report",
+            "generate-harnesses", "validate-harnesses", "reproduce", "findings", "triage", "report", "bundle",
         ):
             self.assertIn(command, output.getvalue())
 
@@ -332,6 +332,24 @@ class CliTests(unittest.TestCase):
         self.assertEqual(
             payload["finding_groups"][0]["artifacts"], ["crash-001", "crash-002"]
         )
+
+    def test_bundle_command_writes_review_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_path = self._write_manifest(root, valid_manifest_data())
+            artifact = root / "crash-001"
+            artifact.write_bytes(b"boom")
+            output = root / "bundle"
+
+            code, _, _ = self._run(
+                "bundle", "--manifest", str(manifest_path), "--artifact", str(artifact),
+                "--output-dir", str(output), "--json",
+            )
+            payload = json.loads((output / "bundle.json").read_text(encoding="utf-8"))
+            self.assertEqual(code, 0)
+            self.assertTrue((output / "report.md").exists())
+            self.assertEqual(payload["human_review_required"], True)
+
 
     @staticmethod
     def _write_manifest(root: Path, data: dict[str, object]) -> Path:

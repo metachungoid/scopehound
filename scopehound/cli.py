@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Sequence
 
+from scopehound.bundling import create_bundle
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import load_findings, parse_sanitizer_output, write_findings
 from scopehound.discovery import discover_harnesses, write_harnesses
@@ -122,6 +123,17 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--reproduction", type=Path)
     report.add_argument("--output", required=True, type=Path)
     _json_argument(report)
+
+    bundle = subparsers.add_parser(
+        "bundle", help="package a local finding for human review"
+    )
+    _manifest_argument(bundle)
+    bundle.add_argument("--artifact", required=True, type=Path)
+    bundle.add_argument("--output-dir", required=True, type=Path)
+    bundle.add_argument("--findings", type=Path)
+    bundle.add_argument("--triage", type=Path)
+    bundle.add_argument("--reproduction", type=Path)
+    _json_argument(bundle)
 
     return parser
 
@@ -329,6 +341,28 @@ def _dispatch(args: argparse.Namespace) -> int:
         report = render_report(manifest, artifact, artifact.path.name, finding, reproduction)
         write_report(report, args.output)
         _success(args, {"output": str(args.output), "sha256": artifact.sha256}, f"report draft: {args.output}")
+        return 0
+
+    if args.command == "bundle":
+        manifest = load_manifest(args.manifest)
+        summary = create_bundle(
+            args.manifest,
+            manifest,
+            args.artifact,
+            args.output_dir,
+            args.findings,
+            args.triage,
+            args.reproduction,
+        )
+        _success(
+            args,
+            {
+                "artifact_sha256": summary.artifact_sha256,
+                "files": list(summary.files),
+                "output": str(summary.output),
+            },
+            f"review bundle: {summary.output}",
+        )
         return 0
 
     raise ScopeHoundError("command_invalid", f"unknown command: {args.command}")

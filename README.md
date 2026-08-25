@@ -215,6 +215,22 @@ The draft requires human completion of reachability, root-cause, impact,
 duplicate, current-version, and scope-policy checks. ScopeHound never transmits
 the report.
 
+Package the local evidence for review without contacting a company:
+
+```bash
+scopehound bundle \
+  --manifest target.json \
+  --artifact .scopehound/targets/example-parser/artifacts/crash-001 \
+  --findings .scopehound/targets/example-parser/findings.json \
+  --triage .scopehound/targets/example-parser/triage.json \
+  --reproduction .scopehound/targets/example-parser/reproduction.json \
+  --output-dir .scopehound/targets/example-parser/disclosure-bundle
+```
+
+The bundle refuses to overwrite a non-empty directory and contains
+`manifest.json`, the artifact, selected evidence files, `report.md`, and
+`bundle.json`. Review and redact it before any private disclosure.
+
 ## Command summary
 
 - `validate`: parse and validate a target manifest
@@ -229,6 +245,7 @@ the report.
 - `findings`: parse ASan/UBSan logs into structured findings
 - `triage`: hash and group local artifacts
 - `report`: render a human-review Markdown disclosure draft
+- `bundle`: package local evidence into a human-review directory
 
 Every command supports `--help`; result-producing commands also support
 `--json` for automation.

@@ -54,6 +54,8 @@ is a security vulnerability.
    sanitizer signatures, records hashes and metadata, and creates one report
    directory per unique artifact.
 9. `scopehound report` renders a Markdown disclosure draft for human review.
+10. `scopehound bundle` packages the local evidence into a non-transmitting
+    review directory.
 
 ## Architecture
 
@@ -71,6 +73,7 @@ The package is divided into focused modules:
 - `triage`: hash artifacts, group duplicates, and write triage metadata.
 - `reporting`: render human-reviewable Markdown reports.
 - `validation`: syntax-check generated harness candidates and record status.
+- `bundling`: copy selected evidence and render a review-only bundle.
 - `cli`: expose stable subcommands and JSON output.
 
 All state lives under a user-selected workspace, defaulting to
