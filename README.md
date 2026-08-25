@@ -155,6 +155,7 @@ scopehound controls \
   --workspace .scopehound-cjson \
   --engine standalone \
   --backend native \
+  --current-revision fb16e5cf358798aabb049655975cde8427101056 \
   --duration 5 \
   --json
 ```

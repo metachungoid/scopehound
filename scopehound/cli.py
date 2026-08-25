@@ -14,6 +14,7 @@ from scopehound.benchmark import run_benchmark, write_benchmark_markdown
 from scopehound.campaign import create_campaign, load_campaign, run_stage
 from scopehound.candidates import build_harnesses, run_harness
 from scopehound.controls import run_control_matrix
+from scopehound.cjson_validation import run_cjson_validation
 from scopehound.coverage import collect_coverage, load_coverage
 from scopehound.engines import list_engines
 from scopehound.known_issues import compare_known_issues, load_known_issues, write_comparisons
@@ -42,7 +43,7 @@ from scopehound.triage import (
     triage_artifacts,
     write_triage,
 )
-from scopehound.targetpacks import cjson_target_pack
+from scopehound.targetpacks import CJSON_CURRENT_COMMIT, cjson_target_pack
 from scopehound.validation import validate_harnesses, write_validation
 from scopehound.workspace import Workspace
 
@@ -198,7 +199,7 @@ def build_parser() -> argparse.ArgumentParser:
     controls.add_argument("--target-pack", choices=("cjson",), required=True)
     controls.add_argument("--manifest", type=Path)
     _workspace_argument(controls)
-    controls.add_argument("--current-revision", default="current")
+    controls.add_argument("--current-revision", default=CJSON_CURRENT_COMMIT)
     controls.add_argument("--engine", choices=("standalone", "libfuzzer"), default="standalone")
     _backend_argument(controls)
     controls.add_argument("--duration", required=True, type=int, metavar="SECONDS")
@@ -327,11 +328,23 @@ def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "controls":
         if args.execute and args.manifest is None:
             raise ScopeHoundError("authorization_required", "--manifest is required for control execution")
+        manifest = None
         if args.manifest is not None:
             manifest = load_manifest(args.manifest)
             if args.execute and manifest.authorization.status != "authorized":
                 raise ScopeHoundError("authorization_required", "control execution requires an authorized manifest")
         pack = cjson_target_pack(args.current_revision)
+        if args.execute:
+            result = run_cjson_validation(
+                workspace=args.workspace,
+                current_revision=args.current_revision,
+                duration_seconds=args.duration,
+                execute=True,
+                manifest=manifest,
+            )
+            output = Workspace(args.workspace).controls_dir("cjson") / "comparison.json"
+            _success(args, {"target": "cjson", "comparison": result["comparison"], "output": str(output)}, f"control matrix cjson -> {output}")
+            return 0
         result = run_control_matrix(
             pack, Workspace(args.workspace), engine=args.engine, backend=args.backend,
             duration_seconds=args.duration, execute=args.execute,

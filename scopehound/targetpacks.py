@@ -44,8 +44,10 @@ int LLVMFuzzerTestOneInput(const unsigned char *data, size_t size) {
 }
 '''
 
+CJSON_CURRENT_COMMIT = "fb16e5cf358798aabb049655975cde8427101056"
 
-def cjson_target_pack(current_revision: str = "current") -> Mapping[str, object]:
+
+def cjson_target_pack(current_revision: str = CJSON_CURRENT_COMMIT) -> Mapping[str, object]:
     recipe = HarnessRecipe(
         name="cjson-parse-with-length",
         source=_CJSON_HARNESS,
