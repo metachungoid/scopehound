@@ -1,0 +1,14 @@
+{
+  "name": "cjson",
+  "repository": "https://github.com/DaveGamble/cJSON.git",
+  "public_references": [
+    "https://github.com/DaveGamble/cJSON/issues/800",
+    "https://github.com/DaveGamble/cJSON/security"
+  ],
+  "seed_hex": "7b2231223a312c",
+  "controls": {
+    "positive": "v1.7.17",
+    "fixed": "v1.7.18",
+    "current": null
+  }
+}
