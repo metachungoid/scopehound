@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from scopehound.errors import ScopeHoundError
+from scopehound.coverage import CoverageRecord
 from scopehound.findings import Finding
 from scopehound.manifest import Manifest
 from scopehound.reproduction import ReproductionResult
@@ -16,6 +17,7 @@ def render_report(
     relative_artifact_path: str,
     finding: Finding | None = None,
     reproduction: ReproductionResult | None = None,
+    coverage: CoverageRecord | None = None,
 ) -> str:
     build_command = json.dumps(list(manifest.commands.build))
     fuzz_command = json.dumps(list(manifest.commands.fuzz))
@@ -68,6 +70,19 @@ def render_report(
 
 {replay_stderr}
 """
+    coverage_details = ""
+    if coverage:
+        coverage_details = f"""## Corpus and coverage feedback
+
+- Candidate: `{coverage.candidate_id}`
+- Corpus before: {coverage.before.count} files / {coverage.before.bytes} bytes
+- Corpus after: {coverage.after.count} files / {coverage.after.bytes} bytes
+- Function delta: `{coverage.function_delta}`
+- Edge delta: `{coverage.edge_delta}`
+- CPU seconds: `{coverage.cpu_seconds}`
+- Findings: `{coverage.finding_count}`
+- Engine statistics: `{json.dumps(dict(coverage.engine_stats), sort_keys=True)}`
+"""
     return f"""---
 human_review_required: true
 target: {manifest.target.name}
@@ -103,6 +118,8 @@ must complete every review item before disclosure.
 {technical_details}
 
 {reproduction_details}
+
+{coverage_details}
 
 ## Security analysis
 

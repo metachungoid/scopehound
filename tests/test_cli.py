@@ -35,6 +35,7 @@ class CliTests(unittest.TestCase):
             "validate", "score", "prepare", "build", "fuzz", "discover",
             "generate-harnesses", "validate-harnesses", "reproduce", "findings", "triage", "report", "bundle",
             "build-harnesses", "run-harness",
+            "coverage",
         ):
             self.assertIn(command, output.getvalue())
 
@@ -300,6 +301,33 @@ class CliTests(unittest.TestCase):
             self.assertEqual(build_code, 0)
             self.assertEqual(run_code, 0)
             self.assertTrue(list((target / "provenance").glob("harness-*.json")))
+
+    def test_coverage_command_writes_feedback_record(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_path = self._write_manifest(root, valid_manifest_data())
+            workspace = root / "state"
+            target = workspace / "targets" / "example-parser"
+            before = target / "before"
+            after = target / "after"
+            before.mkdir(parents=True)
+            after.mkdir(parents=True)
+            (before / "seed").write_bytes(b"a")
+            (after / "seed").write_bytes(b"a")
+            (after / "new").write_bytes(b"b")
+            engine = root / "engine.log"
+            engine.write_text("stat::number_of_executed_units: 3\n", encoding="utf-8")
+
+            code, _, _ = self._run(
+                "coverage", "--manifest", str(manifest_path), "--workspace", str(workspace),
+                "--candidate", "candidate", "--before", str(before), "--after", str(after),
+                "--engine-log", str(engine), "--cpu-seconds", "1.5", "--finding-count", "1",
+            )
+            record = json.loads((target / "coverage" / "candidate.json").read_text(encoding="utf-8"))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(record["after"]["count"], 2)
+        self.assertEqual(record["engine_stats"]["number_of_executed_units"], 3)
 
     def test_reproduce_command_updates_matching_finding(self) -> None:
         sanitizer_log = (

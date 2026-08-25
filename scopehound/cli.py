@@ -10,6 +10,7 @@ from typing import Sequence
 
 from scopehound.bundling import create_bundle
 from scopehound.candidates import build_harnesses, run_harness
+from scopehound.coverage import collect_coverage, load_coverage
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import load_findings, parse_sanitizer_output, write_findings
 from scopehound.discovery import discover_harnesses, write_harnesses
@@ -113,6 +114,22 @@ def build_parser() -> argparse.ArgumentParser:
     _execute_argument(candidate_run)
     _json_argument(candidate_run)
 
+    coverage = subparsers.add_parser(
+        "coverage", help="record corpus and local coverage feedback"
+    )
+    _manifest_argument(coverage)
+    _workspace_argument(coverage)
+    coverage.add_argument("--candidate", required=True)
+    coverage.add_argument("--before", type=Path)
+    coverage.add_argument("--after", type=Path)
+    coverage.add_argument("--engine-log", type=Path)
+    coverage.add_argument("--coverage-artifact", action="append", type=Path, default=[])
+    coverage.add_argument("--llvm-before", type=Path)
+    coverage.add_argument("--llvm-after", type=Path)
+    coverage.add_argument("--cpu-seconds", type=float, default=0.0)
+    coverage.add_argument("--finding-count", type=int, default=0)
+    _json_argument(coverage)
+
     reproduce = subparsers.add_parser(
         "reproduce", help="replay an artifact and compare its sanitizer fingerprint"
     )
@@ -142,6 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--artifact", required=True, type=Path)
     report.add_argument("--findings", type=Path)
     report.add_argument("--reproduction", type=Path)
+    report.add_argument("--coverage", type=Path)
     report.add_argument("--output", required=True, type=Path)
     _json_argument(report)
 
@@ -318,6 +336,29 @@ def _dispatch(args: argparse.Namespace) -> int:
         )
         return 0
 
+    if args.command == "coverage":
+        manifest = load_manifest(args.manifest)
+        workspace = Workspace(args.workspace)
+        engine_output = ""
+        if args.engine_log:
+            try:
+                engine_output = args.engine_log.read_text(encoding="utf-8")
+            except OSError as error:
+                raise ScopeHoundError("input_invalid", f"cannot read engine log: {error}") from error
+        record = collect_coverage(
+            manifest, workspace, args.candidate, before_dir=args.before, after_dir=args.after,
+            engine_output=engine_output, coverage_paths=tuple(args.coverage_artifact),
+            llvm_before=args.llvm_before, llvm_after=args.llvm_after,
+            cpu_seconds=args.cpu_seconds, finding_count=args.finding_count,
+        )
+        output = workspace.coverage_dir(manifest.target.name) / f"{args.candidate}.json"
+        _success(
+            args,
+            {"candidate": record.candidate_id, "output": str(output), "function_delta": record.function_delta, "edge_delta": record.edge_delta},
+            f"coverage record: {output}",
+        )
+        return 0
+
     if args.command == "reproduce":
         manifest = load_manifest(args.manifest)
         workspace = Workspace(args.workspace)
@@ -398,6 +439,11 @@ def _dispatch(args: argparse.Namespace) -> int:
                     f"reproduction artifact does not match requested artifact: {reproduction.artifact}",
                 )
         report = render_report(manifest, artifact, artifact.path.name, finding, reproduction)
+        if args.coverage:
+            report = render_report(
+                manifest, artifact, artifact.path.name, finding, reproduction,
+                load_coverage(args.coverage),
+            )
         write_report(report, args.output)
         _success(args, {"output": str(args.output), "sha256": artifact.sha256}, f"report draft: {args.output}")
         return 0
