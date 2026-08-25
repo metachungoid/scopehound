@@ -5,6 +5,7 @@ import json
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Mapping
 
 from scopehound.errors import ScopeHoundError
 
@@ -21,6 +22,8 @@ class Finding:
     artifact: str | None
     raw_output: str
     reproducibility: str = "unverified"
+    normalized_stack: tuple[str, ...] = ()
+    provenance: Mapping[str, object] | None = None
 
 
 def load_findings(path: Path) -> tuple[Finding, ...]:
@@ -33,6 +36,8 @@ def load_findings(path: Path) -> tuple[Finding, ...]:
                 stack=tuple(item.get("stack", ())), fingerprint=item["fingerprint"],
                 artifact=item.get("artifact"), raw_output=item.get("raw_output", ""),
                 reproducibility=item.get("reproducibility", "unverified"),
+                normalized_stack=tuple(item.get("normalized_stack", ())),
+                provenance=item.get("provenance"),
             )
             for item in payload
         )
@@ -111,6 +116,8 @@ def write_findings(findings: tuple[Finding, ...], output: Path) -> None:
     for finding in findings:
         item = asdict(finding)
         item["stack"] = list(finding.stack)
+        item["normalized_stack"] = list(finding.normalized_stack)
+        item["provenance"] = dict(finding.provenance) if finding.provenance else None
         payload.append(item)
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(f"{output.name}.tmp")

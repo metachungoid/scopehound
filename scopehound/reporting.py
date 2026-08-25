@@ -46,6 +46,8 @@ def render_report(
 
 {evidence}
 """
+        if finding.provenance:
+            technical_details += f"\n- Provenance: `{json.dumps(dict(finding.provenance), sort_keys=True)}`\n"
     reproduction_details = ""
     if reproduction:
         observed = ", ".join(f"`{item}`" for item in reproduction.observed_fingerprints)
@@ -70,6 +72,8 @@ def render_report(
 
 {replay_stderr}
 """
+        if reproduction.provenance:
+            reproduction_details += f"\n- Provenance: `{json.dumps(dict(reproduction.provenance), sort_keys=True)}`\n"
     coverage_details = ""
     if coverage:
         coverage_details = f"""## Corpus and coverage feedback

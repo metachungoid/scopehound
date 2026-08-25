@@ -12,11 +12,13 @@ from scopehound.bundling import create_bundle
 from scopehound.analyze import import_fuzz_introspector, parse_ast_json, rank_candidates
 from scopehound.candidates import build_harnesses, run_harness
 from scopehound.coverage import collect_coverage, load_coverage
+from scopehound.known_issues import compare_known_issues, load_known_issues, write_comparisons
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import load_findings, parse_sanitizer_output, write_findings
 from scopehound.discovery import discover_harnesses, write_harnesses
 from scopehound.harness import HarnessCandidate, generate_harnesses, write_harnesses as write_generated_harnesses
 from scopehound.manifest import Manifest, load_manifest
+from scopehound.minimize import minimize_artifact, write_minimized
 from scopehound.reporting import render_report, write_report
 from scopehound.reproduction import load_reproduction, reproduce_finding, write_reproduction
 from scopehound.runner import (
@@ -141,6 +143,23 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--introspector", type=Path)
     analyze.add_argument("--output", required=True, type=Path)
     _json_argument(analyze)
+
+    minimize = subparsers.add_parser("minimize", help="minimize a local crash artifact with replay checks")
+    _manifest_argument(minimize)
+    _workspace_argument(minimize)
+    minimize.add_argument("--artifact", required=True, type=Path)
+    minimize.add_argument("--expected-fingerprint", required=True)
+    minimize.add_argument("--output", required=True, type=Path)
+    minimize.add_argument("--timeout", type=int, default=120)
+    _execute_argument(minimize)
+    _json_argument(minimize)
+
+    known = subparsers.add_parser("known-issues", help="compare findings with local known-issue data")
+    _manifest_argument(known)
+    known.add_argument("--findings", required=True, type=Path)
+    known.add_argument("--issues", required=True, type=Path)
+    known.add_argument("--output", required=True, type=Path)
+    _json_argument(known)
 
     reproduce = subparsers.add_parser(
         "reproduce", help="replay an artifact and compare its sanitizer fingerprint"
@@ -396,6 +415,34 @@ def _dispatch(args: argparse.Namespace) -> int:
         }
         _write_json_output(payload, args.output)
         _success(args, {"count": len(ranked), "output": str(args.output)}, f"ranked {len(ranked)} candidates -> {args.output}")
+        return 0
+
+    if args.command == "minimize":
+        manifest = load_manifest(args.manifest)
+        workspace = Workspace(args.workspace)
+        result = minimize_artifact(
+            manifest, workspace, args.artifact, args.expected_fingerprint,
+            execute=args.execute, timeout_seconds=args.timeout,
+        )
+        write_minimized(result, args.output)
+        _success(
+            args,
+            {"status": result.status, "child": result.child, "parent_sha256": result.parent_sha256, "child_sha256": result.child_sha256, "output": str(args.output)},
+            f"minimization {result.status}: {result.child} -> {args.output}",
+        )
+        return 0
+
+    if args.command == "known-issues":
+        manifest = load_manifest(args.manifest)
+        findings = load_findings(args.findings)
+        issues = load_known_issues(args.issues)
+        comparisons = compare_known_issues(findings, issues, current_revision=manifest.target.revision)
+        write_comparisons(comparisons, args.output)
+        _success(
+            args,
+            {"count": len(comparisons), "labels": {label: sum(item.label == label for item in comparisons) for label in sorted({item.label for item in comparisons})}, "output": str(args.output)},
+            f"compared {len(comparisons)} findings -> {args.output}",
+        )
         return 0
 
     if args.command == "reproduce":

@@ -4,11 +4,13 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from types import MappingProxyType
+from typing import Mapping
 
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import parse_sanitizer_output
 from scopehound.manifest import Manifest
 from scopehound.policy import require_authorized
+from scopehound.provenance import create_provenance
 from scopehound.runner import CommandPlan, run_plan
 from scopehound.workspace import Workspace
 
@@ -23,6 +25,7 @@ class ReproductionResult:
     returncode: int | None
     stdout: str
     stderr: str
+    provenance: Mapping[str, object] | None = None
 
 
 def load_reproduction(path: Path) -> ReproductionResult:
@@ -45,6 +48,7 @@ def load_reproduction(path: Path) -> ReproductionResult:
             returncode=_optional_int(payload.get("returncode")),
             stdout=_required_string(payload, "stdout"),
             stderr=_required_string(payload, "stderr"),
+            provenance=payload.get("provenance"),
         )
     except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
         raise ScopeHoundError("input_invalid", f"cannot read reproduction {path}: {error}") from error
@@ -99,6 +103,22 @@ def reproduce_finding(
         status = "different_finding"
     else:
         status = "not_reproduced"
+    provenance = create_provenance(
+        manifest, result, environment=manifest.environment,
+        timeout_seconds=timeout_seconds,
+    )
+    provenance_payload = {
+        "target": provenance.target, "repository": provenance.repository,
+        "revision": provenance.revision, "manifest_digest": provenance.manifest_digest,
+        "argv": list(provenance.argv), "environment": dict(provenance.environment),
+        "host_platform": provenance.host_platform, "toolchain": dict(provenance.toolchain),
+        "sanitizer_runtime": provenance.sanitizer_runtime,
+        "source_sha256": provenance.source_sha256, "binary_sha256": provenance.binary_sha256,
+        "corpus_sha256": provenance.corpus_sha256, "dictionary_sha256": provenance.dictionary_sha256,
+        "started_at": provenance.started_at, "ended_at": provenance.ended_at,
+        "timeout_seconds": provenance.timeout_seconds, "backend": provenance.backend,
+        "executed": provenance.executed,
+    }
     return ReproductionResult(
         artifact=artifact_path.name,
         expected_fingerprint=expected_fingerprint,
@@ -108,6 +128,7 @@ def reproduce_finding(
         returncode=result.returncode,
         stdout=result.stdout,
         stderr=result.stderr,
+        provenance=provenance_payload,
     )
 
 
@@ -115,6 +136,8 @@ def write_reproduction(result: ReproductionResult, output: Path) -> None:
     payload = asdict(result)
     payload["command"] = list(result.command)
     payload["observed_fingerprints"] = list(result.observed_fingerprints)
+    if result.provenance:
+        payload["provenance"] = dict(result.provenance)
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(output.name + ".tmp")
     try:

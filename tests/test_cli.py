@@ -37,6 +37,7 @@ class CliTests(unittest.TestCase):
             "build-harnesses", "run-harness",
             "coverage",
             "analyze",
+            "minimize", "known-issues",
         ):
             self.assertIn(command, output.getvalue())
 
@@ -355,6 +356,30 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(payload["ranked"][0]["function"], "parse")
         self.assertEqual(payload["ranked"][0]["coverage_gap"], 1.0)
+
+    def test_known_issues_command_writes_labels(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_path = self._write_manifest(root, valid_manifest_data())
+            findings_path = root / "findings.json"
+            findings_path.write_text(json.dumps([{
+                "sanitizer": "AddressSanitizer", "kind": "heap", "summary": "heap",
+                "location": "a.c:1:1", "function": "parse", "stack": [],
+                "fingerprint": "new", "artifact": "crash", "raw_output": "raw",
+                "reproducibility": "unverified",
+            }]), encoding="utf-8")
+            issues = root / "issues.json"
+            issues.write_text("[]", encoding="utf-8")
+            output = root / "known.json"
+
+            code, _, _ = self._run(
+                "known-issues", "--manifest", str(manifest_path), "--findings", str(findings_path),
+                "--issues", str(issues), "--output", str(output),
+            )
+            payload = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(payload[0]["label"], "new_candidate")
 
     def test_reproduce_command_updates_matching_finding(self) -> None:
         sanitizer_log = (
