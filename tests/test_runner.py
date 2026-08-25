@@ -6,8 +6,12 @@ import unittest
 from pathlib import Path
 
 from scopehound.errors import ScopeHoundError
-from scopehound.runner import CommandPlan, run_plan
+from scopehound.manifest import validate_manifest
+from scopehound.runner import CommandPlan, command_plans, run_plan
+from scopehound.workspace import Workspace
 from unittest.mock import patch
+
+from tests.fixtures import valid_manifest_data
 
 
 class RunnerTests(unittest.TestCase):
@@ -84,6 +88,22 @@ class RunnerTests(unittest.TestCase):
                     run_plan(plan, execute=False, backend="bubblewrap")
 
         self.assertEqual(raised.exception.category, "sandbox_unavailable")
+
+    def test_command_plans_substitute_each_step_without_shell(self) -> None:
+        manifest = validate_manifest(valid_manifest_data())
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plans = command_plans(
+                manifest,
+                Workspace(Path(temp_dir)),
+                (("cc", "-I", "{repo}", "-o", "{binary}"), ("./target", "{artifact}")),
+                stage="harness",
+                timeout_seconds=30,
+                mutates=True,
+            )
+
+        self.assertEqual(plans[0].argv[0], "cc")
+        self.assertNotIn("{repo}", plans[0].argv)
+        self.assertFalse(any(";" in argument for argument in plans[1].argv))
 
 
 if __name__ == "__main__":

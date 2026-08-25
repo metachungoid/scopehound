@@ -24,10 +24,16 @@ _OPPORTUNITY_FIELDS = (
     "duplicate_risk",
 )
 SUPPORTED_PLACEHOLDERS = frozenset(
-    {"repo", "source", "binary", "corpus", "dictionary", "artifact", "duration"}
+    {
+        "repo", "source", "source_c", "object", "binary", "corpus", "dictionary",
+        "artifact", "duration", "revision",
+    }
 )
 _PLACEHOLDER = re.compile(r"\{([^{}]+)\}")
 _COVERAGE_MODES = {"none", "llvm"}
+
+Command = tuple[str, ...]
+CommandGroup = tuple[Command, ...]
 
 
 @dataclass(frozen=True)
@@ -49,10 +55,15 @@ class Authorization:
 
 @dataclass(frozen=True)
 class Commands:
-    build: tuple[str, ...]
-    fuzz: tuple[str, ...]
-    reproduce: tuple[str, ...] | None = None
-    harness_build: tuple[str, ...] | None = None
+    build: Command
+    fuzz: Command
+    reproduce: Command | None = None
+    harness_build: Command | None = None
+    prepare_steps: CommandGroup = ()
+    build_steps: CommandGroup = ()
+    fuzz_steps: CommandGroup = ()
+    reproduce_steps: CommandGroup = ()
+    harness_build_steps: CommandGroup = ()
 
 
 @dataclass(frozen=True)
@@ -132,11 +143,25 @@ def validate_manifest(data: object) -> Manifest:
         )
 
         commands_data = _mapping(root.get("commands"), "commands")
+        build_steps = _command_group(commands_data.get("build"), "commands.build")
+        fuzz_steps = _command_group(commands_data.get("fuzz"), "commands.fuzz")
+        reproduce_steps = _optional_command_group(commands_data.get("reproduce"), "commands.reproduce")
+        harness_build_steps = _optional_command_group(
+            commands_data.get("harness_build"), "commands.harness_build"
+        )
+        prepare_steps = _optional_command_group(commands_data.get("prepare"), "commands.prepare")
+        _validate_group_required(reproduce_steps, "commands.reproduce", ("artifact",))
+        _validate_group_required(harness_build_steps, "commands.harness_build", ("source", "binary"))
         commands = Commands(
-            build=_command(commands_data.get("build"), "commands.build"),
-            fuzz=_command(commands_data.get("fuzz"), "commands.fuzz"),
-            reproduce=_reproduction_command(commands_data.get("reproduce")),
-            harness_build=_harness_build_command(commands_data.get("harness_build")),
+            build=_first_command(build_steps),
+            fuzz=_first_command(fuzz_steps),
+            reproduce=_first_optional_command(reproduce_steps),
+            harness_build=_first_optional_command(harness_build_steps),
+            prepare_steps=prepare_steps,
+            build_steps=build_steps,
+            fuzz_steps=fuzz_steps,
+            reproduce_steps=reproduce_steps,
+            harness_build_steps=harness_build_steps,
         )
 
         corpus_data = _mapping(root.get("corpus", {}), "corpus")
@@ -206,7 +231,7 @@ def _string_tuple(value: object, field: str) -> tuple[str, ...]:
     return tuple(_string(item, f"{field} item") for item in value)
 
 
-def _command(value: object, field: str) -> tuple[str, ...]:
+def _command(value: object, field: str) -> Command:
     if not isinstance(value, list) or not value:
         _invalid(f"{field} must be a non-empty argument array")
     command = tuple(_string(item, f"{field} argument") for item in value)
@@ -214,22 +239,47 @@ def _command(value: object, field: str) -> tuple[str, ...]:
     return command
 
 
-def _reproduction_command(value: object) -> tuple[str, ...] | None:
-    if value is None:
-        return None
-    command = _command(value, "commands.reproduce")
-    _validate_command_placeholders(command, "commands.reproduce", required=("artifact",))
-    return command
+def _command_group(value: object, field: str) -> CommandGroup:
+    if not isinstance(value, list) or not value:
+        _invalid(f"{field} must be a non-empty argument array or command group")
+    if all(isinstance(item, str) for item in value):
+        return (_command(value, field),)
+    if not all(isinstance(item, list) for item in value):
+        _invalid(f"{field} must contain only argument arrays")
+    commands = tuple(_command(item, f"{field}[{index}]") for index, item in enumerate(value))
+    if not commands:
+        _invalid(f"{field} must contain at least one command")
+    return commands
 
 
-def _harness_build_command(value: object) -> tuple[str, ...] | None:
+def _optional_command_group(value: object, field: str) -> CommandGroup:
     if value is None:
-        return None
-    command = _command(value, "commands.harness_build")
-    _validate_command_placeholders(
-        command, "commands.harness_build", required=("source", "binary")
-    )
-    return command
+        return ()
+    return _command_group(value, field)
+
+
+def _first_command(group: CommandGroup) -> Command:
+    return group[0]
+
+
+def _first_optional_command(group: CommandGroup) -> Command | None:
+    return group[0] if group else None
+
+
+def _validate_group_required(
+    group: CommandGroup, field: str, required: tuple[str, ...]
+) -> None:
+    if not group:
+        return
+    counts = {name: 0 for name in required}
+    for command in group:
+        for argument in command:
+            for match in _PLACEHOLDER.finditer(argument):
+                if match.group(1) in counts:
+                    counts[match.group(1)] += 1
+    for name, count in counts.items():
+        if count != 1:
+            _invalid(f"{field} command group must contain exactly one {{{name}}} placeholder")
 
 
 def _validate_command_placeholders(

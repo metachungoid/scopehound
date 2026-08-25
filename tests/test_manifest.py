@@ -46,6 +46,27 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(manifest.corpus.max_input_size, 4096)
         self.assertEqual(manifest.corpus.coverage_mode, "llvm")
 
+    def test_accepts_grouped_build_steps_and_preserves_flat_compatibility(self) -> None:
+        data = valid_manifest_data()
+        data["commands"]["build"] = [  # type: ignore[index]
+            ["cc", "-c", "a.c"], ["cc", "a.o", "-o", "a"]
+        ]
+        data["commands"]["prepare"] = [["cc", "--version"]]  # type: ignore[index]
+
+        manifest = validate_manifest(data)
+
+        self.assertEqual(manifest.commands.build, ("cc", "-c", "a.c"))
+        self.assertEqual(manifest.commands.build_steps, (
+            ("cc", "-c", "a.c"), ("cc", "a.o", "-o", "a"),
+        ))
+        self.assertEqual(manifest.commands.prepare_steps, (("cc", "--version"),))
+
+    def test_rejects_grouped_command_with_unknown_placeholder(self) -> None:
+        data = valid_manifest_data()
+        data["commands"]["prepare"] = [["git", "-C", "{repo}", "{shell}"]]  # type: ignore[index]
+
+        self._assert_manifest_invalid(data)
+
     def test_rejects_unknown_or_missing_harness_placeholders(self) -> None:
         for command in (
             ["clang++", "{source}", "-o", "{binary}", "{unknown}"],

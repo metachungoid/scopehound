@@ -49,6 +49,18 @@ class Workspace:
     def provenance_dir(self, name: str) -> Path:
         return self._contained(self.target_dir(name) / "provenance")
 
+    def build_dir(self, name: str) -> Path:
+        return self._contained(self.target_dir(name) / "build")
+
+    def reports_dir(self, name: str) -> Path:
+        return self._contained(self.target_dir(name) / "reports")
+
+    def controls_dir(self, name: str) -> Path:
+        return self._contained(self.target_dir(name) / "controls")
+
+    def campaign_file(self, name: str) -> Path:
+        return self._contained(self.target_dir(name) / "campaign.json")
+
     def findings_file(self, name: str) -> Path:
         return self._contained(self.target_dir(name) / "findings.json")
 

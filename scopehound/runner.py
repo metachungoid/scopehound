@@ -8,7 +8,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 from scopehound.errors import ScopeHoundError
-from scopehound.manifest import Manifest
+from scopehound.manifest import CommandGroup, Manifest
 from scopehound.policy import require_authorized
 from scopehound.sandbox import wrap_plan
 from scopehound.workspace import Workspace
@@ -82,6 +82,55 @@ def build_plan(manifest: Manifest, workspace: Workspace) -> CommandPlan:
         mutates=True,
         create_directories=(workspace.logs_dir(manifest.target.name),),
     )
+
+
+def command_plans(
+    manifest: Manifest,
+    workspace: Workspace,
+    group: CommandGroup,
+    *,
+    stage: str,
+    timeout_seconds: float,
+    mutates: bool,
+) -> tuple[CommandPlan, ...]:
+    """Render a validated command group into bounded shell-free plans."""
+    require_authorized(manifest)
+    target = manifest.target.name
+    repository = workspace.repo_dir(target)
+    values: dict[str, str] = {
+        "repo": str(repository),
+        "source": str(workspace.generated_dir(target) / "harness.cc"),
+        "source_c": str(workspace.generated_dir(target) / "harness.c"),
+        "object": str(workspace.binaries_dir(target) / "harness.o"),
+        "binary": str(workspace.binaries_dir(target) / "target.bin"),
+        "corpus": str(workspace.corpus_dir(target)),
+        "dictionary": str(_dictionary_path(manifest, repository)),
+        "artifact": str(workspace.artifacts_dir(target)),
+        "duration": "0",
+        "revision": manifest.target.revision,
+    }
+    directories = (
+        workspace.logs_dir(target),
+        workspace.build_dir(target),
+        workspace.generated_dir(target),
+        workspace.binaries_dir(target),
+        workspace.corpus_dir(target),
+        workspace.artifacts_dir(target),
+    )
+    plans: list[CommandPlan] = []
+    for command in group:
+        rendered = tuple(_render_argument(argument, values) for argument in command)
+        plans.append(
+            CommandPlan(
+                argv=rendered,
+                cwd=repository,
+                environment=MappingProxyType(dict(manifest.environment)),
+                timeout_seconds=timeout_seconds,
+                mutates=mutates,
+                create_directories=directories,
+            )
+        )
+    return tuple(plans)
 
 
 def fuzz_plan(
@@ -170,3 +219,23 @@ def run_plan(
 
 def _is_local_repository(repository: str) -> bool:
     return repository.startswith("file://") or Path(repository).is_absolute()
+
+
+def _dictionary_path(manifest: Manifest, repository: Path) -> Path:
+    if manifest.corpus.dictionary is None:
+        return Path("")
+    candidate = (repository / manifest.corpus.dictionary).resolve()
+    try:
+        candidate.relative_to(repository.resolve())
+    except ValueError as error:
+        raise ScopeHoundError("unsafe_path", "dictionary must remain inside the repository") from error
+    return candidate
+
+
+def _render_argument(argument: str, values: Mapping[str, str]) -> str:
+    rendered = argument
+    for name, replacement in values.items():
+        rendered = rendered.replace("{" + name + "}", replacement)
+    if "{" in rendered or "}" in rendered:
+        raise ScopeHoundError("manifest_invalid", f"unresolved command placeholder: {argument}")
+    return rendered

@@ -37,6 +37,18 @@ class WorkspaceTests(unittest.TestCase):
             self.assertEqual(toolchain, target / "toolchain")
             self.assertEqual(provenance, target / "provenance")
 
+    def test_campaign_paths_are_contained(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Workspace(Path(temp_dir))
+
+            self.assertEqual(
+                workspace.campaign_file("example-parser"),
+                workspace.target_dir("example-parser") / "campaign.json",
+            )
+            self.assertTrue(
+                workspace.controls_dir("example-parser").is_relative_to(workspace.root)
+            )
+
     def test_path_traversal_slug_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Workspace(Path(temp_dir))
