@@ -10,6 +10,7 @@ from typing import Sequence
 
 from scopehound.bundling import create_bundle
 from scopehound.analyze import import_fuzz_introspector, parse_ast_json, rank_candidates
+from scopehound.benchmark import run_benchmark, write_benchmark_markdown
 from scopehound.candidates import build_harnesses, run_harness
 from scopehound.coverage import collect_coverage, load_coverage
 from scopehound.known_issues import compare_known_issues, load_known_issues, write_comparisons
@@ -19,6 +20,7 @@ from scopehound.discovery import discover_harnesses, write_harnesses
 from scopehound.harness import HarnessCandidate, generate_harnesses, write_harnesses as write_generated_harnesses
 from scopehound.manifest import Manifest, load_manifest
 from scopehound.minimize import minimize_artifact, write_minimized
+from scopehound.provenance import create_provenance, normalize_stack
 from scopehound.reporting import render_report, write_report
 from scopehound.reproduction import load_reproduction, reproduce_finding, write_reproduction
 from scopehound.runner import (
@@ -167,6 +169,14 @@ def build_parser() -> argparse.ArgumentParser:
     known.add_argument("--output", required=True, type=Path)
     _json_argument(known)
 
+    benchmark = subparsers.add_parser("benchmark", help="measure local benchmark fixture effectiveness")
+    benchmark.add_argument("--fixtures-dir", required=True, type=Path)
+    _workspace_argument(benchmark)
+    benchmark.add_argument("--output", required=True, type=Path)
+    benchmark.add_argument("--markdown", type=Path)
+    _execute_argument(benchmark)
+    _json_argument(benchmark)
+
     reproduce = subparsers.add_parser(
         "reproduce", help="replay an artifact and compare its sanitizer fingerprint"
     )
@@ -210,6 +220,8 @@ def build_parser() -> argparse.ArgumentParser:
     bundle.add_argument("--findings", type=Path)
     bundle.add_argument("--triage", type=Path)
     bundle.add_argument("--reproduction", type=Path)
+    bundle.add_argument("--minimization", type=Path)
+    bundle.add_argument("--coverage", type=Path)
     _json_argument(bundle)
 
     return parser
@@ -276,6 +288,26 @@ def _dispatch(args: argparse.Namespace) -> int:
         if args.execute:
             _write_logs(workspace, manifest, "fuzz", (result,))
             findings = parse_sanitizer_output(result.stdout + "\n" + result.stderr)
+            provenance = create_provenance(
+                manifest, result, backend=args.backend, backend_policy=result.policy,
+                timeout_seconds=args.duration + 10, environment=manifest.environment,
+            )
+            provenance_payload = {
+                "target": provenance.target, "repository": provenance.repository,
+                "revision": provenance.revision, "manifest_digest": provenance.manifest_digest,
+                "argv": list(provenance.argv), "environment": dict(provenance.environment),
+                "host_platform": provenance.host_platform, "toolchain": dict(provenance.toolchain),
+                "sanitizer_runtime": provenance.sanitizer_runtime,
+                "source_sha256": provenance.source_sha256, "binary_sha256": provenance.binary_sha256,
+                "corpus_sha256": provenance.corpus_sha256, "dictionary_sha256": provenance.dictionary_sha256,
+                "started_at": provenance.started_at, "ended_at": provenance.ended_at,
+                "timeout_seconds": provenance.timeout_seconds, "backend": provenance.backend,
+                "backend_policy": dict(provenance.backend_policy), "executed": provenance.executed,
+            }
+            findings = tuple(
+                replace(item, normalized_stack=normalize_stack(item.stack), provenance=provenance_payload)
+                for item in findings
+            )
             write_findings(findings, workspace.findings_file(manifest.target.name))
             if result.returncode and not findings:
                 raise ScopeHoundError("command_failed", f"fuzz command exited {result.returncode} without a sanitizer finding")
@@ -453,6 +485,22 @@ def _dispatch(args: argparse.Namespace) -> int:
         )
         return 0
 
+    if args.command == "benchmark":
+        workspace = Workspace(args.workspace)
+        result = run_benchmark(args.fixtures_dir, workspace, execute=args.execute)
+        payload = {
+            "version": result.version, "fixtures": result.fixtures,
+            "link_success_rate": result.link_success_rate, "coverage_delta": result.coverage_delta,
+            "unique_fingerprints_per_cpu_hour": result.unique_fingerprints_per_cpu_hour,
+            "replay_success_rate": result.replay_success_rate, "duplicate_rate": result.duplicate_rate,
+            "false_positive_rate": result.false_positive_rate, "skipped_tools": list(result.skipped_tools),
+        }
+        _write_json_output(payload, args.output)
+        if args.markdown:
+            write_benchmark_markdown(result, args.markdown)
+        _success(args, {"fixtures": result.fixtures, "output": str(args.output), "markdown": str(args.markdown) if args.markdown else None}, f"benchmark: {args.output}")
+        return 0
+
     if args.command == "reproduce":
         manifest = load_manifest(args.manifest)
         workspace = Workspace(args.workspace)
@@ -553,6 +601,8 @@ def _dispatch(args: argparse.Namespace) -> int:
             args.findings,
             args.triage,
             args.reproduction,
+            args.minimization,
+            args.coverage,
         )
         _success(
             args,
@@ -585,6 +635,8 @@ def _write_logs(
         output = logs / f"{label}{suffix}.log"
         content = (
             f"argv: {json.dumps(list(result.argv))}\n"
+            f"backend: {result.backend}\n"
+            f"policy: {json.dumps(dict(result.policy), sort_keys=True)}\n"
             f"returncode: {result.returncode}\n"
             "\n[stdout]\n"
             f"{result.stdout}"

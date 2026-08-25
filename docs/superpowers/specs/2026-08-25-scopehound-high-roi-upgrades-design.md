@@ -2,9 +2,9 @@
 
 ## Status
 
-Proposed design approved in conversation on 2026-08-25. This document defines
-the next architectural increment; implementation begins only after the written
-spec is reviewed.
+Approved design implemented incrementally from 2026-08-25 onward. This
+document remains the architectural authority for the runnable candidate,
+coverage, provenance, sandbox, and benchmark workflow.
 
 ## Goal
 
@@ -236,7 +236,8 @@ stage can be rerun from those records without repeating earlier stages.
 The upgrade is complete when:
 
 1. at least one generated candidate can be built and run through the same
-   authorized workspace pipeline as a supplied harness
+   authorized workspace pipeline as a supplied harness; the `build-harnesses`
+   and `run-harness` commands now provide this lifecycle
 2. corpus and coverage records are produced without requiring network access
 3. target ranking can consume AST metadata and an optional local Introspector
    report
@@ -244,4 +245,4 @@ The upgrade is complete when:
    child artifact when requested
 5. native and sandbox execution have distinct, auditable policies
 6. the benchmark command measures effectiveness and all existing tests remain
-   green
+   green; the versioned fixture set lives under `benchmarks/fixtures`

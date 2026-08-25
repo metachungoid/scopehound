@@ -4,6 +4,7 @@ import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import Finding, load_findings
@@ -29,6 +30,8 @@ def create_bundle(
     findings_path: Path | None = None,
     triage_path: Path | None = None,
     reproduction_path: Path | None = None,
+    minimization_path: Path | None = None,
+    coverage_path: Path | None = None,
 ) -> BundleSummary:
     """Create a local, human-reviewable evidence bundle without transmitting it."""
     require_authorized(manifest)
@@ -60,6 +63,15 @@ def create_bundle(
     if reproduction_path:
         _copy_input(reproduction_path, output / "reproduction.json")
         files.append("reproduction.json")
+    if coverage_path:
+        _copy_input(coverage_path, output / "coverage.json")
+        files.append("coverage.json")
+    if minimization_path:
+        _copy_input(minimization_path, output / "minimization.json")
+        files.append("minimization.json")
+        child = _minimized_child(minimization_path)
+        _copy_input(child, output / f"minimized-{child.name}")
+        files.append(f"minimized-{child.name}")
 
     report_path = output / "report.md"
     write_report(
@@ -121,6 +133,20 @@ def _copy_input(source: Path, destination: Path) -> None:
         shutil.copyfile(source, destination)
     except OSError as error:
         raise ScopeHoundError("output_failed", f"cannot copy {source}: {error}") from error
+
+
+def _minimized_child(record_path: Path) -> Path:
+    try:
+        payload: Any = json.loads(record_path.read_text(encoding="utf-8"))
+        child = payload["child"]
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as error:
+        raise ScopeHoundError("input_invalid", f"cannot read minimization child: {error}") from error
+    if not isinstance(child, str):
+        raise ScopeHoundError("input_invalid", "minimization child must be a path string")
+    path = Path(child).expanduser().resolve()
+    if path.is_symlink() or not path.is_file():
+        raise ScopeHoundError("input_invalid", f"minimization child is not a regular file: {path}")
+    return path
 
 
 def _atomic_write(output: Path, content: str) -> None:

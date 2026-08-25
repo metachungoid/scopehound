@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Mapping
 
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import Finding, parse_sanitizer_output
 from scopehound.manifest import Manifest
 from scopehound.policy import require_authorized
+from scopehound.provenance import create_provenance, normalize_stack
 from scopehound.runner import CommandPlan, CommandResult, run_plan
 from scopehound.workspace import Workspace
 
@@ -49,6 +50,7 @@ class HarnessRun:
     stdout: str
     stderr: str
     findings: tuple[Finding, ...]
+    provenance: Mapping[str, object] | None = None
 
 
 def load_candidates(harnesses_dir: Path, target_dir: Path) -> tuple[CandidateRecord, ...]:
@@ -207,7 +209,20 @@ def run_harness(
         create_directories=(corpus_dir, artifact_dir, workspace.logs_dir(manifest.target.name)),
     )
     result = run_plan(plan, execute=execute, allow_failure=True, backend=backend)
-    findings = parse_sanitizer_output(result.stdout + "\n" + result.stderr) if execute else ()
+    artifact_hint = None
+    if execute:
+        artifacts = tuple(path for path in sorted(artifact_dir.rglob("*")) if path.is_file())
+        artifact_hint = artifacts[0] if len(artifacts) == 1 else None
+    findings = parse_sanitizer_output(result.stdout + "\n" + result.stderr, artifact_hint) if execute else ()
+    provenance = create_provenance(
+        manifest, result, backend=backend, timeout_seconds=duration_seconds + 10,
+        environment=environment, backend_policy=result.policy,
+    )
+    provenance_payload = _provenance_payload(provenance)
+    findings = tuple(
+        replace(finding, normalized_stack=normalize_stack(finding.stack), provenance=provenance_payload)
+        for finding in findings
+    )
     status = "planned" if not execute else ("finding" if findings else ("completed" if result.returncode == 0 else "failed"))
     record = HarnessRun(
         candidate_id=candidate_id,
@@ -220,6 +235,7 @@ def run_harness(
         stdout=result.stdout,
         stderr=result.stderr,
         findings=findings,
+        provenance=provenance_payload,
     )
     _write_run(record, workspace.provenance_dir(manifest.target.name) / f"harness-{candidate_id}.json")
     return record
@@ -289,6 +305,8 @@ def _write_run(result: HarnessRun, output: Path) -> None:
     item["findings"] = [
         {**asdict(finding), "stack": list(finding.stack)} for finding in result.findings
     ]
+    if result.provenance:
+        item["provenance"] = dict(result.provenance)
     _write_json(item, output)
 
 
@@ -300,3 +318,18 @@ def _write_json(payload: object, output: Path) -> None:
         temporary.replace(output)
     except OSError as error:
         raise ScopeHoundError("output_failed", f"cannot write candidate record {output}: {error}") from error
+
+
+def _provenance_payload(record: object) -> dict[str, object]:
+    return {
+        "target": record.target, "repository": record.repository, "revision": record.revision,
+        "manifest_digest": record.manifest_digest, "argv": list(record.argv),
+        "environment": dict(record.environment), "host_platform": record.host_platform,
+        "toolchain": dict(record.toolchain), "sanitizer_runtime": record.sanitizer_runtime,
+        "source_sha256": record.source_sha256, "binary_sha256": record.binary_sha256,
+        "corpus_sha256": record.corpus_sha256, "dictionary_sha256": record.dictionary_sha256,
+        "started_at": record.started_at, "ended_at": record.ended_at,
+        "timeout_seconds": record.timeout_seconds, "backend": record.backend,
+        "backend_policy": dict(record.backend_policy),
+        "executed": record.executed,
+    }

@@ -106,6 +106,7 @@ def reproduce_finding(
         status = "not_reproduced"
     provenance = create_provenance(
         manifest, result, environment=manifest.environment, backend=backend,
+        backend_policy=result.policy,
         timeout_seconds=timeout_seconds,
     )
     provenance_payload = {
@@ -118,6 +119,7 @@ def reproduce_finding(
         "corpus_sha256": provenance.corpus_sha256, "dictionary_sha256": provenance.dictionary_sha256,
         "started_at": provenance.started_at, "ended_at": provenance.ended_at,
         "timeout_seconds": provenance.timeout_seconds, "backend": provenance.backend,
+        "backend_policy": dict(provenance.backend_policy),
         "executed": provenance.executed,
     }
     return ReproductionResult(

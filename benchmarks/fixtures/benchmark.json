@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "name": "known-memory-bug",
+      "kind": "expected_sanitizer",
+      "link_status": "built",
+      "coverage_delta": 4,
+      "cpu_seconds": 60,
+      "replay": "success",
+      "unique_fingerprints": 1,
+      "findings": 1,
+      "duplicates": 0,
+      "false_positives": 0
+    },
+    {
+      "name": "compile-failing-candidate",
+      "kind": "compile_failure",
+      "link_status": "failed",
+      "coverage_delta": 0,
+      "cpu_seconds": 0,
+      "replay": "not_attempted",
+      "unique_fingerprints": 0,
+      "findings": 0,
+      "duplicates": 0,
+      "false_positives": 0
+    },
+    {
+      "name": "non-security-crash",
+      "kind": "harness_failure",
+      "link_status": "built",
+      "coverage_delta": 1,
+      "cpu_seconds": 30,
+      "replay": "failure",
+      "unique_fingerprints": 0,
+      "findings": 1,
+      "duplicates": 0,
+      "false_positives": 1
+    },
+    {
+      "name": "duplicate-artifacts",
+      "kind": "duplicate",
+      "link_status": "built",
+      "coverage_delta": 2,
+      "cpu_seconds": 30,
+      "replay": "success",
+      "unique_fingerprints": 1,
+      "findings": 1,
+      "duplicates": 1,
+      "false_positives": 0
+    },
+    {
+      "name": "non-replayable",
+      "kind": "non_replayable",
+      "link_status": "built",
+      "coverage_delta": 0,
+      "cpu_seconds": 15,
+      "replay": "failure",
+      "unique_fingerprints": 1,
+      "findings": 1,
+      "duplicates": 0,
+      "false_positives": 0
+    }
+  ]
+}

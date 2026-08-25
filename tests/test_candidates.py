@@ -87,7 +87,7 @@ class CandidateTests(unittest.TestCase):
             ]
             data["commands"]["fuzz"] = [  # type: ignore[index]
                 sys.executable, "-c",
-                "from pathlib import Path; p=Path(r'{corpus}').parent / 'artifacts' / 'crash'; p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(b'x'); print('ERROR: AddressSanitizer: heap-buffer-overflow'); print('SUMMARY: AddressSanitizer: heap-buffer-overflow /src/parser.c:1:1 in parse'); raise SystemExit(1)",
+                "import os; from pathlib import Path; p=Path(os.environ['SCOPEHOUND_ARTIFACTS_DIR']) / 'crash'; p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(b'x'); print('ERROR: AddressSanitizer: heap-buffer-overflow'); print('SUMMARY: AddressSanitizer: heap-buffer-overflow /src/parser.c:1:1 in parse'); raise SystemExit(1)",
                 "{binary}", "{corpus}", "{duration}",
             ]
             manifest = validate_manifest(data)
@@ -96,6 +96,8 @@ class CandidateTests(unittest.TestCase):
 
             self.assertEqual(run.status, "finding")
             self.assertEqual(len(run.findings), 1)
+            self.assertEqual(run.findings[0].artifact, "crash")
+            self.assertTrue(run.findings[0].provenance)
             self.assertTrue(Path(run.artifact_dir).is_dir())
 
     def test_run_harness_refuses_non_built_candidate(self) -> None:

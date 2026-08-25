@@ -89,6 +89,26 @@ class BundlingTests(unittest.TestCase):
             with self.assertRaisesRegex(ScopeHoundError, "already exists"):
                 create_bundle(manifest_path, manifest, artifact, output)
 
+    def test_includes_minimization_record_and_child_artifact(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            manifest_data = valid_manifest_data()
+            manifest_path = root / "target.json"
+            manifest_path.write_text(json.dumps(manifest_data), encoding="utf-8")
+            manifest = validate_manifest(manifest_data)
+            artifact = root / "crash"
+            artifact.write_bytes(b"parent")
+            child = root / "crash.minimized"
+            child.write_bytes(b"child")
+            minimization = root / "minimize.json"
+            minimization.write_text(json.dumps({"child": str(child), "parent_sha256": "parent"}), encoding="utf-8")
+            output = root / "bundle"
+
+            create_bundle(manifest_path, manifest, artifact, output, minimization_path=minimization)
+
+            self.assertTrue((output / "minimization.json").exists())
+            self.assertTrue((output / "minimized-crash.minimized").exists())
+
 
 if __name__ == "__main__":
     unittest.main()

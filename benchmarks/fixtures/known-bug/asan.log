@@ -1,0 +1,2 @@
+ERROR: AddressSanitizer: heap-buffer-overflow
+SUMMARY: AddressSanitizer: heap-buffer-overflow /src/fixture.c:10:4 in fixture_parse

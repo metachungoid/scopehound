@@ -48,6 +48,10 @@ An executable target must include:
 - `memory-corruption` among the eligible classes
 - build and fuzz commands expressed as argument arrays
 - an optional artifact replay command with an explicit `{artifact}` placeholder
+- optional `commands.harness_build` with `{repo}`, `{source}`, and `{binary}`
+  placeholders for reviewed generated harnesses
+- optional `corpus` settings for seed paths, dictionaries, input-size limits,
+  and LLVM coverage collection
 - opportunity factors between zero and one
 
 The authorization record is an audit checkpoint, not proof that its claims are
@@ -148,6 +152,150 @@ The validation record distinguishes `planned`, `syntax_valid`, and
 `syntax_invalid`. A successful syntax check is only a compiler-front-end check;
 it does not establish linkability, reachability, or security impact.
 
+## Build and run generated candidates
+
+Generated sources become runnable only when the manifest opts in to a build
+command. Placeholders are substituted per argument; shell interpolation is
+never enabled:
+
+```json
+"commands": {
+  "fuzz": ["{binary}", "-max_total_time={duration}", "{corpus}"],
+  "harness_build": [
+    "clang++", "-fsanitize=fuzzer,address,undefined",
+    "-I", "{repo}", "{source}", "-o", "{binary}"
+  ]
+},
+"corpus": {
+  "seed_dir": "seeds",
+  "dictionary": "parser.dict",
+  "max_input_size": 1048576,
+  "coverage_mode": "llvm"
+}
+```
+
+Build candidates in the authorized workspace and inspect the compiler output:
+
+```bash
+scopehound build-harnesses \
+  --manifest target.json \
+  --workspace .scopehound \
+  --harnesses-dir .scopehound/targets/example-parser/generated-harnesses \
+  --execute
+```
+
+The result is `generated/harness-build.json` with one stable candidate ID and a
+`planned`, `built`, `build_failed`, or `unconfigured` status. A build failure
+is not converted into a security finding. Run only a candidate recorded as
+`built`:
+
+```bash
+scopehound run-harness \
+  --manifest target.json --workspace .scopehound \
+  --candidate CANDIDATE_ID --duration 300 --execute
+```
+
+The run record is stored under `provenance/`; sanitizer findings are merged
+into the target `findings.json` with normalized stacks and the full execution
+provenance.
+
+## Coverage feedback and target selection
+
+Record corpus growth, engine statistics, coverage artifact digests, LLVM
+function/edge deltas, CPU seconds, and finding counts:
+
+```bash
+scopehound coverage \
+  --manifest target.json --workspace .scopehound \
+  --candidate CANDIDATE_ID \
+  --before .scopehound/targets/example-parser/corpus-before \
+  --after .scopehound/targets/example-parser/corpus/CANDIDATE_ID \
+  --engine-log .scopehound/targets/example-parser/logs/harness.log \
+  --cpu-seconds 300 --finding-count 1
+```
+
+AST and Fuzz Introspector inputs are local advisory metadata. They never cause
+network access:
+
+```bash
+scopehound analyze \
+  --manifest target.json \
+  --repo .scopehound/targets/example-parser/repo \
+  --harnesses .scopehound/targets/example-parser/generated-harnesses/harnesses.json \
+  --ast .scopehound/targets/example-parser/ast.json \
+  --introspector .scopehound/targets/example-parser/fuzz-introspector.json \
+  --output .scopehound/targets/example-parser/analysis.json
+```
+
+Ranking combines authorization, buildability, static reachability, coverage
+gap, input suitability, and duplicate risk. The regex generator remains the
+portable fallback when compiler metadata is unavailable.
+
+## Provenance, minimization, and known issues
+
+Executed findings and replays record the immutable revision, canonical manifest
+digest, exact argv, selected environment, host/Python/compiler data, sanitizer
+runtime, digests, timestamps, timeout, and backend policy. Raw sanitizer output
+is preserved alongside normalized stack frames.
+
+Minimize a crash only through the configured replay command. The original
+artifact is never replaced; the child records its parent SHA-256:
+
+```bash
+scopehound minimize \
+  --manifest target.json --workspace .scopehound \
+  --artifact .scopehound/targets/example-parser/artifacts/crash-001 \
+  --expected-fingerprint FINGERPRINT \
+  --output .scopehound/targets/example-parser/provenance/minimize.json \
+  --execute
+```
+
+Compare findings with researcher-supplied local JSON or CSV issue data:
+
+```bash
+scopehound known-issues \
+  --manifest target.json \
+  --findings .scopehound/targets/example-parser/findings.json \
+  --issues researcher-known-issues.csv \
+  --output .scopehound/targets/example-parser/known-issues.json
+```
+
+Results are `possible_duplicate`, `possible_regression`, or `new_candidate`;
+none are silently suppressed.
+
+## Execution backends
+
+Native execution remains the default and is still bounded, shell-free, and
+explicit. Request an isolated backend when the local tools are available:
+
+```bash
+scopehound run-harness ... --backend bubblewrap --execute
+scopehound fuzz ... --backend docker --execute
+```
+
+`bubblewrap` uses a non-root user, no network, a read-only repository, and
+resource limits. Docker uses the equivalent `--network none`, read-only
+filesystem/repository, dropped capabilities, and process/memory limits. A
+requested unavailable backend fails with `sandbox_unavailable`; ScopeHound
+never falls back to native mode. Dry-run output includes the wrapped argv and
+serialized policy.
+
+## Benchmark effectiveness
+
+Run the versioned local fixture set:
+
+```bash
+scopehound benchmark \
+  --fixtures-dir benchmarks/fixtures \
+  --workspace .scopehound-benchmark \
+  --output benchmark.json --markdown benchmark.md
+```
+
+The report measures link success, mean coverage delta, unique fingerprints per
+CPU-hour, replay success, duplicate rate, and false-positive rate. Missing LLVM
+tools are explicit skips. A feature-count increase is not considered an
+effectiveness improvement if these quality metrics regress.
+
 For a finding with an artifact-specific baseline, add an authorized replay
 command to the manifest, such as:
 
@@ -224,12 +372,15 @@ scopehound bundle \
   --findings .scopehound/targets/example-parser/findings.json \
   --triage .scopehound/targets/example-parser/triage.json \
   --reproduction .scopehound/targets/example-parser/reproduction.json \
+  --minimization .scopehound/targets/example-parser/provenance/minimize.json \
+  --coverage .scopehound/targets/example-parser/coverage/CANDIDATE_ID.json \
   --output-dir .scopehound/targets/example-parser/disclosure-bundle
 ```
 
 The bundle refuses to overwrite a non-empty directory and contains
-`manifest.json`, the artifact, selected evidence files, `report.md`, and
-`bundle.json`. Review and redact it before any private disclosure.
+`manifest.json`, the artifact, selected evidence files, an optional minimized
+child artifact, `report.md`, and `bundle.json`. Review and redact it before any
+private disclosure.
 
 ## Command summary
 
@@ -241,11 +392,18 @@ The bundle refuses to overwrite a non-empty directory and contains
 - `discover`: find existing C/C++ fuzz harnesses in a checkout
 - `generate-harnesses`: generate review-only libFuzzer harness candidates
 - `validate-harnesses`: syntax-check generated harnesses under an authorized checkout
+- `build-harnesses`: compile generated candidates and record link status
+- `run-harness`: execute one built generated candidate for a bounded duration
+- `coverage`: record corpus and coverage feedback
+- `analyze`: rank candidates using local AST/reachability metadata
 - `reproduce`: replay an artifact and compare its sanitizer fingerprint
+- `minimize`: create a replay-preserving child artifact with parent provenance
+- `known-issues`: compare findings with local JSON/CSV issue data
 - `findings`: parse ASan/UBSan logs into structured findings
 - `triage`: hash and group local artifacts
 - `report`: render a human-review Markdown disclosure draft
 - `bundle`: package local evidence into a human-review directory
+- `benchmark`: measure local fixture effectiveness and quality gates
 
 Every command supports `--help`; result-producing commands also support
 `--json` for automation.

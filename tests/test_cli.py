@@ -38,6 +38,7 @@ class CliTests(unittest.TestCase):
             "coverage",
             "analyze",
             "minimize", "known-issues",
+            "benchmark",
         ):
             self.assertIn(command, output.getvalue())
 
@@ -380,6 +381,23 @@ class CliTests(unittest.TestCase):
 
         self.assertEqual(code, 0)
         self.assertEqual(payload[0]["label"], "new_candidate")
+
+    def test_benchmark_command_writes_json_and_markdown(self) -> None:
+        fixtures = Path(__file__).parents[1] / "benchmarks" / "fixtures"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            output = root / "benchmark.json"
+            markdown = root / "benchmark.md"
+            code, _, _ = self._run(
+                "benchmark", "--fixtures-dir", str(fixtures), "--workspace", str(root / "state"),
+                "--output", str(output), "--markdown", str(markdown),
+            )
+            payload = json.loads(output.read_text(encoding="utf-8"))
+            markdown_content = markdown.read_text(encoding="utf-8")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["version"], 1)
+        self.assertIn("ScopeHound benchmark", markdown_content)
 
     def test_reproduce_command_updates_matching_finding(self) -> None:
         sanitizer_log = (

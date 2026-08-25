@@ -50,7 +50,10 @@ def triage_artifacts(directory: Path) -> TriageResult:
         )
 
     groups: dict[tuple[str, int], list[Path]] = {}
-    for path in sorted(directory.iterdir(), key=lambda item: item.name):
+    for path in sorted(
+        (item for item in directory.rglob("*") if item.is_file()),
+        key=lambda item: item.relative_to(directory).as_posix(),
+    ):
         if path.is_symlink() or not path.is_file():
             continue
         record = inspect_artifact(path)

@@ -37,6 +37,7 @@ class ProvenanceRecord:
     ended_at: str
     timeout_seconds: float
     backend: str
+    backend_policy: Mapping[str, object]
     executed: bool
 
 
@@ -54,6 +55,7 @@ def create_provenance(
     corpus_sha256: str | None = None,
     dictionary_sha256: str | None = None,
     sanitizer_runtime: str | None = None,
+    backend_policy: Mapping[str, object] | None = None,
 ) -> ProvenanceRecord:
     now = _utc_now()
     values = dict(environment or {})
@@ -87,6 +89,7 @@ def create_provenance(
         ended_at=end_time or now,
         timeout_seconds=float(timeout_seconds),
         backend=backend,
+        backend_policy=MappingProxyType(dict(backend_policy or {})),
         executed=result.executed,
     )
 
@@ -137,10 +140,17 @@ def symbolize_stack(
 
 
 def write_provenance(record: ProvenanceRecord, output: Path) -> None:
-    payload = asdict(record)
-    payload["argv"] = list(record.argv)
-    payload["environment"] = dict(record.environment)
-    payload["toolchain"] = dict(record.toolchain)
+    payload = {
+        "target": record.target, "repository": record.repository, "revision": record.revision,
+        "manifest_digest": record.manifest_digest, "argv": list(record.argv),
+        "environment": dict(record.environment), "host_platform": record.host_platform,
+        "toolchain": dict(record.toolchain), "sanitizer_runtime": record.sanitizer_runtime,
+        "source_sha256": record.source_sha256, "binary_sha256": record.binary_sha256,
+        "corpus_sha256": record.corpus_sha256, "dictionary_sha256": record.dictionary_sha256,
+        "started_at": record.started_at, "ended_at": record.ended_at,
+        "timeout_seconds": record.timeout_seconds, "backend": record.backend,
+        "backend_policy": dict(record.backend_policy), "executed": record.executed,
+    }
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(output.name + ".tmp")
     try:
