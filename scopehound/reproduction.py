@@ -61,6 +61,7 @@ def reproduce_finding(
     expected_fingerprint: str,
     execute: bool = False,
     timeout_seconds: int = 120,
+    backend: str = "native",
 ) -> ReproductionResult:
     require_authorized(manifest)
     command = manifest.commands.reproduce
@@ -90,7 +91,7 @@ def reproduce_finding(
         mutates=True,
         create_directories=(workspace.logs_dir(manifest.target.name),),
     )
-    result = run_plan(plan, execute=execute, allow_failure=True)
+    result = run_plan(plan, execute=execute, allow_failure=True, backend=backend)
     findings = parse_sanitizer_output(
         result.stdout + "\n" + result.stderr, artifact_path
     ) if execute else ()
@@ -104,7 +105,7 @@ def reproduce_finding(
     else:
         status = "not_reproduced"
     provenance = create_provenance(
-        manifest, result, environment=manifest.environment,
+        manifest, result, environment=manifest.environment, backend=backend,
         timeout_seconds=timeout_seconds,
     )
     provenance_payload = {

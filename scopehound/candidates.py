@@ -97,6 +97,7 @@ def build_harnesses(
     harnesses_dir: Path,
     *,
     execute: bool = False,
+    backend: str = "native",
 ) -> tuple[CandidateBuild, ...]:
     require_authorized(manifest)
     target_dir = workspace.target_dir(manifest.target.name)
@@ -141,7 +142,7 @@ def build_harnesses(
             mutates=True,
             create_directories=(workspace.binaries_dir(manifest.target.name), workspace.logs_dir(manifest.target.name)),
         )
-        result = run_plan(plan, execute=execute, allow_failure=True)
+        result = run_plan(plan, execute=execute, allow_failure=True, backend=backend)
         status = "planned" if not execute else ("built" if result.returncode == 0 else "build_failed")
         results.append(
             CandidateBuild(
@@ -167,6 +168,7 @@ def run_harness(
     duration_seconds: int,
     *,
     execute: bool = False,
+    backend: str = "native",
 ) -> HarnessRun:
     require_authorized(manifest)
     if not 1 <= duration_seconds <= 86_400:
@@ -204,7 +206,7 @@ def run_harness(
         mutates=True,
         create_directories=(corpus_dir, artifact_dir, workspace.logs_dir(manifest.target.name)),
     )
-    result = run_plan(plan, execute=execute, allow_failure=True)
+    result = run_plan(plan, execute=execute, allow_failure=True, backend=backend)
     findings = parse_sanitizer_output(result.stdout + "\n" + result.stderr) if execute else ()
     status = "planned" if not execute else ("finding" if findings else ("completed" if result.returncode == 0 else "failed"))
     record = HarnessRun(

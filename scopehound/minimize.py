@@ -34,6 +34,7 @@ def minimize_artifact(
     *,
     execute: bool = False,
     timeout_seconds: int = 120,
+    backend: str = "native",
 ) -> MinimizedArtifact:
     require_authorized(manifest)
     if not 1 <= timeout_seconds <= 3_600:
@@ -71,7 +72,7 @@ def minimize_artifact(
                 timeout_seconds=timeout_seconds, mutates=True,
                 create_directories=(workspace.logs_dir(manifest.target.name),),
             )
-            observed = run_plan(plan, execute=True, allow_failure=True)
+            observed = run_plan(plan, execute=True, allow_failure=True, backend=backend)
             attempts += 1
             findings = parse_sanitizer_output(observed.stdout + "\n" + observed.stderr, child)
             if expected_fingerprint in {finding.fingerprint for finding in findings}:

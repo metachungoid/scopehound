@@ -10,6 +10,7 @@ from typing import Mapping
 from scopehound.errors import ScopeHoundError
 from scopehound.manifest import Manifest
 from scopehound.policy import require_authorized
+from scopehound.sandbox import wrap_plan
 from scopehound.workspace import Workspace
 
 
@@ -30,6 +31,8 @@ class CommandResult:
     stdout: str
     stderr: str
     executed: bool
+    backend: str = "native"
+    policy: Mapping[str, object] = field(default_factory=dict)
 
 
 def prepare_plans(
@@ -102,9 +105,24 @@ def fuzz_plan(
     )
 
 
-def run_plan(plan: CommandPlan, execute: bool = False, allow_failure: bool = False) -> CommandResult:
+def run_plan(
+    plan: CommandPlan,
+    execute: bool = False,
+    allow_failure: bool = False,
+    *,
+    backend: str = "native",
+) -> CommandResult:
+    wrapped = wrap_plan(plan, backend)
+    policy = {
+        "name": wrapped.policy.name,
+        "network": wrapped.policy.network,
+        "read_only_repo": wrapped.policy.read_only_repo,
+        "cpu_seconds": wrapped.policy.cpu_seconds,
+        "memory_mb": wrapped.policy.memory_mb,
+        "process_limit": wrapped.policy.process_limit,
+    }
     if not execute:
-        return CommandResult(plan.argv, None, "", "", False)
+        return CommandResult(wrapped.argv, None, "", "", False, backend, policy)
 
     for directory in plan.create_directories:
         directory.mkdir(parents=True, exist_ok=True)
@@ -113,7 +131,7 @@ def run_plan(plan: CommandPlan, execute: bool = False, allow_failure: bool = Fal
     environment.update(plan.environment)
     try:
         completed = subprocess.run(
-            plan.argv,
+            wrapped.argv,
             cwd=plan.cwd,
             env=environment,
             shell=False,
@@ -133,11 +151,13 @@ def run_plan(plan: CommandPlan, execute: bool = False, allow_failure: bool = Fal
         ) from error
 
     result = CommandResult(
-        argv=plan.argv,
+        argv=wrapped.argv,
         returncode=completed.returncode,
         stdout=completed.stdout,
         stderr=completed.stderr,
         executed=True,
+        backend=backend,
+        policy=policy,
     )
     if completed.returncode != 0 and not allow_failure:
         detail = completed.stderr.strip() or completed.stdout.strip() or "no output"

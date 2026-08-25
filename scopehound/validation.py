@@ -29,6 +29,7 @@ def validate_harnesses(
     harnesses_dir: Path,
     compiler: str,
     execute: bool = False,
+    backend: str = "native",
 ) -> tuple[HarnessValidation, ...]:
     """Syntax-check generated harnesses without linking or executing them."""
     require_authorized(manifest)
@@ -52,7 +53,7 @@ def validate_harnesses(
     )
     validations: list[HarnessValidation] = []
     for generated_file, plan in zip(generated_files, plans):
-        result = run_plan(plan, execute=execute, allow_failure=True)
+        result = run_plan(plan, execute=execute, allow_failure=True, backend=backend)
         if not execute:
             status = "planned"
         elif result.returncode == 0:

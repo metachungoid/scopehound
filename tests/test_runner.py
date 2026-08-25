@@ -7,6 +7,7 @@ from pathlib import Path
 
 from scopehound.errors import ScopeHoundError
 from scopehound.runner import CommandPlan, run_plan
+from unittest.mock import patch
 
 
 class RunnerTests(unittest.TestCase):
@@ -74,6 +75,15 @@ class RunnerTests(unittest.TestCase):
                 run_plan(plan, execute=True)
 
         self.assertEqual(raised.exception.category, "command_failed")
+
+    def test_requested_unavailable_backend_is_not_replaced_by_native(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            plan = CommandPlan((sys.executable, "-c", "print('unsafe fallback')"), Path(temp_dir), {}, 5, False)
+            with patch("scopehound.sandbox.shutil.which", return_value=None):
+                with self.assertRaises(ScopeHoundError) as raised:
+                    run_plan(plan, execute=False, backend="bubblewrap")
+
+        self.assertEqual(raised.exception.category, "sandbox_unavailable")
 
 
 if __name__ == "__main__":

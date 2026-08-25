@@ -66,12 +66,14 @@ def build_parser() -> argparse.ArgumentParser:
     build = subparsers.add_parser("build", help="plan or run the target build command")
     _manifest_argument(build)
     _workspace_argument(build)
+    _backend_argument(build)
     _execute_argument(build)
     _json_argument(build)
 
     fuzz = subparsers.add_parser("fuzz", help="plan or run a bounded local fuzz command")
     _manifest_argument(fuzz)
     _workspace_argument(fuzz)
+    _backend_argument(fuzz)
     fuzz.add_argument("--duration", required=True, type=int, metavar="SECONDS")
     _execute_argument(fuzz)
     _json_argument(fuzz)
@@ -94,6 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
     validation.add_argument("--harnesses-dir", required=True, type=Path)
     validation.add_argument("--output", required=True, type=Path)
     validation.add_argument("--compiler", default="c++")
+    _backend_argument(validation)
     _execute_argument(validation)
     _json_argument(validation)
 
@@ -104,6 +107,7 @@ def build_parser() -> argparse.ArgumentParser:
     _workspace_argument(candidate_build)
     candidate_build.add_argument("--harnesses-dir", required=True, type=Path)
     candidate_build.add_argument("--compiler", help="recorded compiler override for future toolchains")
+    _backend_argument(candidate_build)
     _execute_argument(candidate_build)
     _json_argument(candidate_build)
 
@@ -114,6 +118,7 @@ def build_parser() -> argparse.ArgumentParser:
     _workspace_argument(candidate_run)
     candidate_run.add_argument("--candidate", required=True)
     candidate_run.add_argument("--duration", required=True, type=int, metavar="SECONDS")
+    _backend_argument(candidate_run)
     _execute_argument(candidate_run)
     _json_argument(candidate_run)
 
@@ -151,6 +156,7 @@ def build_parser() -> argparse.ArgumentParser:
     minimize.add_argument("--expected-fingerprint", required=True)
     minimize.add_argument("--output", required=True, type=Path)
     minimize.add_argument("--timeout", type=int, default=120)
+    _backend_argument(minimize)
     _execute_argument(minimize)
     _json_argument(minimize)
 
@@ -170,6 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
     reproduce.add_argument("--findings", required=True, type=Path)
     reproduce.add_argument("--output", required=True, type=Path)
     reproduce.add_argument("--timeout", type=int, default=120, metavar="SECONDS")
+    _backend_argument(reproduce)
     _execute_argument(reproduce)
     _json_argument(reproduce)
 
@@ -255,7 +262,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         manifest = load_manifest(args.manifest)
         workspace = Workspace(args.workspace)
         plan = build_plan(manifest, workspace)
-        result = run_plan(plan, args.execute)
+        result = run_plan(plan, args.execute, backend=args.backend)
         if args.execute:
             _write_logs(workspace, manifest, "build", (result,))
         _plans_success(args, (plan,), (result,))
@@ -265,7 +272,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         manifest = load_manifest(args.manifest)
         workspace = Workspace(args.workspace)
         plan = fuzz_plan(manifest, workspace, args.duration)
-        result = run_plan(plan, args.execute, allow_failure=True)
+        result = run_plan(plan, args.execute, allow_failure=True, backend=args.backend)
         if args.execute:
             _write_logs(workspace, manifest, "fuzz", (result,))
             findings = parse_sanitizer_output(result.stdout + "\n" + result.stderr)
@@ -307,6 +314,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             args.harnesses_dir,
             args.compiler,
             execute=args.execute,
+            backend=args.backend,
         )
         write_validation(results, output)
         invalid = sum(result.status == "syntax_invalid" for result in results)
@@ -333,7 +341,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         manifest = load_manifest(args.manifest)
         workspace = Workspace(args.workspace)
         results = build_harnesses(
-            manifest, workspace, args.harnesses_dir, execute=args.execute
+            manifest, workspace, args.harnesses_dir, execute=args.execute, backend=args.backend
         )
         statuses = {status: sum(item.status == status for item in results) for status in sorted({item.status for item in results})}
         output = workspace.generated_dir(manifest.target.name) / "harness-build.json"
@@ -350,7 +358,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         manifest = load_manifest(args.manifest)
         workspace = Workspace(args.workspace)
         result = run_harness(
-            manifest, workspace, args.candidate, args.duration, execute=args.execute
+            manifest, workspace, args.candidate, args.duration, execute=args.execute, backend=args.backend
         )
         if args.execute and result.findings:
             findings_path = workspace.findings_file(manifest.target.name)
@@ -422,7 +430,7 @@ def _dispatch(args: argparse.Namespace) -> int:
         workspace = Workspace(args.workspace)
         result = minimize_artifact(
             manifest, workspace, args.artifact, args.expected_fingerprint,
-            execute=args.execute, timeout_seconds=args.timeout,
+            execute=args.execute, timeout_seconds=args.timeout, backend=args.backend,
         )
         write_minimized(result, args.output)
         _success(
@@ -465,6 +473,7 @@ def _dispatch(args: argparse.Namespace) -> int:
             baseline.fingerprint,
             execute=args.execute,
             timeout_seconds=args.timeout,
+            backend=args.backend,
         )
         write_reproduction(result, output)
         if result.status == "reproduced":
@@ -593,8 +602,12 @@ def _plans_success(
     payload = {
         "executed": bool(args.execute),
         "plans": [
-            {"argv": list(plan.argv), "cwd": str(plan.cwd), "timeout_seconds": plan.timeout_seconds}
-            for plan in plans
+            {
+                "argv": list(plan.argv), "cwd": str(plan.cwd),
+                "timeout_seconds": plan.timeout_seconds,
+                "backend": result.backend, "policy": dict(result.policy),
+            }
+            for plan, result in zip(plans, results)
         ],
     }
     if args.execute:
@@ -628,6 +641,13 @@ def _execute_argument(parser: argparse.ArgumentParser) -> None:
 
 def _json_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
+
+
+def _backend_argument(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--backend", choices=("native", "bubblewrap", "docker"), default="native",
+        help="execution backend; unavailable sandboxes fail without fallback",
+    )
 
 
 def _target_path(workspace: Workspace, target_name: str, requested: Path) -> Path:
