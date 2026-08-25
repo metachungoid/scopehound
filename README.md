@@ -171,6 +171,30 @@ The reviewed recipe includes cleanup (`cJSON_Delete(json)`) and the standalone
 C driver is available at `scopehound/standalone_driver.c`. The cJSON metadata and
 public references are in `target-packs/cjson.json`.
 
+The real-library regression test is runnable from the repository and uses a
+temporary checkout:
+
+```bash
+python3 -m unittest tests.integration.test_cjson_campaign -v
+```
+
+The verified control result reproduces the public v1.7.17 sanitizer signal and
+does not reproduce it on v1.7.18. The pinned current revision is exercised in
+the same run, but its evidence remains local and is never promoted or sent by
+ScopeHound. A passing run reports `122` tests when included in the full suite:
+
+```bash
+python3 -m unittest discover -s tests -q
+```
+
+For a retained local record, use the validation wrapper described in
+[`docs/real-library-validation.md`](docs/real-library-validation.md). Its
+comparison record is written to:
+
+```text
+<workspace>/targets/cjson/controls/comparison.json
+```
+
 Local fixture repositories require an additional deliberate flag:
 
 ```bash
