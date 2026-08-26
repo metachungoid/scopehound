@@ -489,7 +489,7 @@ def _campaign_config(value: object) -> CampaignConfig:
 
 def _optimizer_config(value: object) -> OptimizerConfig:
     data = _mapping(value, "campaign.optimizer")
-    return OptimizerConfig(
+    config = OptimizerConfig(
         exploration_fraction=_factor(data.get("exploration_fraction", 0.2), "campaign.optimizer.exploration_fraction"),
         halving_factor=_bounded_int(data.get("halving_factor", 2), "campaign.optimizer.halving_factor", minimum=2, maximum=16),
         candidate_weight=_factor(data.get("candidate_weight", 0.7), "campaign.optimizer.candidate_weight"),
@@ -497,6 +497,9 @@ def _optimizer_config(value: object) -> OptimizerConfig:
         replay_weight=_factor(data.get("replay_weight", 0.1), "campaign.optimizer.replay_weight"),
         coverage_weight=_factor(data.get("coverage_weight", 0.05), "campaign.optimizer.coverage_weight"),
     )
+    if config.candidate_weight <= config.duplicate_weight + config.replay_weight + config.coverage_weight:
+        _invalid("campaign.optimizer.candidate_weight must dominate proxy weights")
+    return config
 
 
 def _build_variant(value: object, field: str) -> BuildVariant:
