@@ -92,6 +92,15 @@ def estimate_yield(metrics: CampaignMetrics) -> YieldEstimate:
     )
 
 
+def promotable_candidates_per_cpu_hour(promotable_candidates: int, cpu_seconds: float) -> float:
+    """Primary adaptive objective; zero CPU time never produces an infinite score."""
+    if promotable_candidates < 0 or cpu_seconds < 0:
+        raise ScopeHoundError("economics_invalid", "candidate and CPU measurements cannot be negative")
+    if cpu_seconds == 0:
+        return 0.0
+    return round(float(promotable_candidates) / (cpu_seconds / 3600.0), 6)
+
+
 def write_yield_estimate(result: YieldEstimate, output: Path) -> None:
     payload = asdict(result)
     output.parent.mkdir(parents=True, exist_ok=True)

@@ -10,12 +10,13 @@ from pathlib import Path
 from typing import Mapping
 
 from scopehound.campaign import manifest_digest
+from scopehound.approval import ApprovalRecord
 from scopehound.economics import CampaignMetrics, YieldEstimate, estimate_yield
 from scopehound.engines import list_engine_adapters
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import parse_sanitizer_output
 from scopehound.manifest import BuildVariant, Manifest
-from scopehound.policy import require_authorized
+from scopehound.policy import require_approved, require_authorized
 from scopehound.resource import classify_resource_output
 from scopehound.runner import command_plans, run_plan
 from scopehound.scoring import score_opportunity
@@ -87,8 +88,12 @@ def run_matrix(
     execute: bool = False,
     backend: str = "native",
     retry: bool = False,
+    approval: ApprovalRecord | None = None,
 ) -> MatrixState:
-    require_authorized(manifest)
+    if approval is None:
+        require_authorized(manifest)
+    else:
+        require_approved(manifest, approval)
     planned = expand_matrix(manifest, duration_seconds=duration_seconds)
     state_path = workspace.matrix_file(manifest.target.name)
     if state_path.exists() and not retry:
