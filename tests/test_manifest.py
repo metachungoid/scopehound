@@ -27,6 +27,74 @@ class ManifestTests(unittest.TestCase):
         self.assertIsNone(manifest.commands.harness_build)
         self.assertEqual(manifest.corpus.max_input_size, 1_048_576)
         self.assertEqual(manifest.corpus.coverage_mode, "none")
+        self.assertEqual(manifest.campaign.max_workers, 1)
+        self.assertEqual(manifest.campaign.engines, ("standalone",))
+        self.assertIsNone(manifest.economics.expected_reward)
+
+    def test_accepts_campaign_variants_oracles_and_economics(self) -> None:
+        data = valid_manifest_data()
+        data["campaign"] = {  # type: ignore[index]
+            "max_workers": 2,
+            "max_retries": 1,
+            "share_corpus": True,
+            "wall_clock_seconds": 120,
+            "cpu_seconds": 90,
+            "process_limit": 2,
+            "engines": ["standalone", "libfuzzer"],
+            "changed_functions": ["parse_document"],
+            "build_variants": [
+                {
+                    "name": "asan",
+                    "environment": {"ASAN_OPTIONS": "abort_on_error=1"},
+                    "changed_functions": ["parse_document"],
+                }
+            ],
+            "oracles": [
+                {
+                    "name": "roundtrip",
+                    "kind": "metamorphic",
+                    "command": ["./oracle", "{artifact}"],
+                }
+            ],
+        }
+        data["economics"] = {  # type: ignore[index]
+            "expected_reward": 5000,
+            "reward_confidence": 0.5,
+            "cpu_hour_cost": 0.25,
+        }
+
+        manifest = validate_manifest(data)
+
+        self.assertEqual(manifest.campaign.max_workers, 2)
+        self.assertEqual(manifest.campaign.engines, ("standalone", "libfuzzer"))
+        self.assertEqual(manifest.campaign.build_variants[0].name, "asan")
+        self.assertEqual(manifest.campaign.oracles[0].command, ("./oracle", "{artifact}"))
+        self.assertEqual(manifest.economics.expected_reward, 5000.0)
+
+    def test_rejects_unsafe_campaign_configuration(self) -> None:
+        invalid_campaigns = (
+            {"max_workers": 0},
+            {"engines": ["unknown"]},
+            {"build_variants": [{"name": "../escape"}]},
+            {"oracles": [{"name": "x", "kind": "unknown", "command": ["true"]}]},
+            {"oracles": [{"name": "x", "kind": "differential", "command": "true"}]},
+        )
+        for campaign in invalid_campaigns:
+            with self.subTest(campaign=campaign):
+                data = valid_manifest_data()
+                data["campaign"] = campaign  # type: ignore[index]
+                self._assert_manifest_invalid(data)
+
+    def test_rejects_invalid_economics(self) -> None:
+        for economics in (
+            {"expected_reward": -1},
+            {"reward_confidence": 1.1},
+            {"cpu_hour_cost": -0.1},
+        ):
+            with self.subTest(economics=economics):
+                data = valid_manifest_data()
+                data["economics"] = economics  # type: ignore[index]
+                self._assert_manifest_invalid(data)
 
     def test_accepts_harness_build_placeholders_and_corpus_config(self) -> None:
         data = valid_manifest_data()

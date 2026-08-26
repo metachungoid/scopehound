@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from types import MappingProxyType
@@ -31,6 +31,8 @@ SUPPORTED_PLACEHOLDERS = frozenset(
 )
 _PLACEHOLDER = re.compile(r"\{([^{}]+)\}")
 _COVERAGE_MODES = {"none", "llvm"}
+_CAMPAIGN_ENGINES = {"standalone", "libfuzzer", "afl++", "honggfuzz", "centipede"}
+_ORACLE_KINDS = {"differential", "metamorphic", "roundtrip"}
 
 Command = tuple[str, ...]
 CommandGroup = tuple[Command, ...]
@@ -86,6 +88,45 @@ class Opportunity:
 
 
 @dataclass(frozen=True)
+class BuildVariant:
+    name: str
+    build_steps: CommandGroup = ()
+    fuzz_steps: CommandGroup = ()
+    environment: Mapping[str, str] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    changed_functions: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class OracleConfig:
+    name: str
+    kind: str
+    command: Command
+
+
+@dataclass(frozen=True)
+class CampaignConfig:
+    max_workers: int = 1
+    max_retries: int = 0
+    share_corpus: bool = False
+    wall_clock_seconds: int = 600
+    cpu_seconds: int = 600
+    process_limit: int = 1
+    engines: tuple[str, ...] = ("standalone",)
+    build_variants: tuple[BuildVariant, ...] = ()
+    changed_functions: tuple[str, ...] = ()
+    oracles: tuple[OracleConfig, ...] = ()
+
+
+@dataclass(frozen=True)
+class Economics:
+    expected_reward: float | None = None
+    reward_confidence: float = 0.0
+    cpu_hour_cost: float = 0.0
+
+
+@dataclass(frozen=True)
 class Manifest:
     schema_version: int
     target: Target
@@ -94,6 +135,8 @@ class Manifest:
     environment: Mapping[str, str]
     opportunity: Opportunity
     corpus: CorpusConfig
+    campaign: CampaignConfig = field(default_factory=CampaignConfig)
+    economics: Economics = field(default_factory=Economics)
 
 
 def load_manifest(path: Path) -> Manifest:
@@ -192,6 +235,9 @@ def validate_manifest(data: object) -> Manifest:
         }
         opportunity = Opportunity(**values)
 
+        campaign = _campaign_config(root.get("campaign", {}))
+        economics = _economics_config(root.get("economics", {}))
+
         return Manifest(
             schema_version=1,
             target=Target(name, repository, revision, language),
@@ -200,6 +246,8 @@ def validate_manifest(data: object) -> Manifest:
             environment=MappingProxyType(environment),
             opportunity=opportunity,
             corpus=corpus,
+            campaign=campaign,
+            economics=economics,
         )
     except ScopeHoundError:
         raise
@@ -228,6 +276,14 @@ def _optional_string(value: object, field: str) -> str:
 def _string_tuple(value: object, field: str) -> tuple[str, ...]:
     if not isinstance(value, list) or not value:
         _invalid(f"{field} must be a non-empty array")
+    return tuple(_string(item, f"{field} item") for item in value)
+
+
+def _optional_string_tuple(value: object, field: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        _invalid(f"{field} must be an array")
     return tuple(_string(item, f"{field} item") for item in value)
 
 
@@ -317,11 +373,140 @@ def _positive_int(value: object, field: str) -> int:
     return value
 
 
+def _bounded_int(value: object, field: str, *, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not minimum <= value <= maximum:
+        _invalid(f"{field} must be an integer between {minimum} and {maximum}")
+    return value
+
+
+def _nonnegative_number(value: object, field: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        _invalid(f"{field} must be a number")
+    result = float(value)
+    if result < 0.0:
+        _invalid(f"{field} must be non-negative")
+    return result
+
+
+def _optional_nonnegative_number(value: object, field: str) -> float | None:
+    if value is None:
+        return None
+    return _nonnegative_number(value, field)
+
+
 def _coverage_mode(value: object, field: str) -> str:
     mode = _string(value, field)
     if mode not in _COVERAGE_MODES:
         _invalid(f"{field} must be one of: {', '.join(sorted(_COVERAGE_MODES))}")
     return mode
+
+
+def _campaign_config(value: object) -> CampaignConfig:
+    data = _mapping(value, "campaign")
+    engines_value = data.get("engines", ["standalone"])
+    engines = _string_tuple(engines_value, "campaign.engines")
+    if any(engine not in _CAMPAIGN_ENGINES for engine in engines):
+        _invalid(
+            "campaign.engines must contain only: "
+            + ", ".join(sorted(_CAMPAIGN_ENGINES))
+        )
+    build_variants_value = data.get("build_variants", [])
+    if not isinstance(build_variants_value, list):
+        _invalid("campaign.build_variants must be an array")
+    variants = tuple(
+        _build_variant(item, f"campaign.build_variants[{index}]")
+        for index, item in enumerate(build_variants_value)
+    )
+    oracle_value = data.get("oracles", [])
+    if not isinstance(oracle_value, list):
+        _invalid("campaign.oracles must be an array")
+    oracles = tuple(
+        _oracle_config(item, f"campaign.oracles[{index}]")
+        for index, item in enumerate(oracle_value)
+    )
+    share_corpus = data.get("share_corpus", False)
+    if not isinstance(share_corpus, bool):
+        _invalid("campaign.share_corpus must be a boolean")
+    return CampaignConfig(
+        max_workers=_bounded_int(
+            data.get("max_workers", 1), "campaign.max_workers", minimum=1, maximum=64
+        ),
+        max_retries=_bounded_int(
+            data.get("max_retries", 0), "campaign.max_retries", minimum=0, maximum=100
+        ),
+        share_corpus=share_corpus,
+        wall_clock_seconds=_bounded_int(
+            data.get("wall_clock_seconds", 600),
+            "campaign.wall_clock_seconds",
+            minimum=1,
+            maximum=86_400,
+        ),
+        cpu_seconds=_bounded_int(
+            data.get("cpu_seconds", 600),
+            "campaign.cpu_seconds",
+            minimum=1,
+            maximum=86_400,
+        ),
+        process_limit=_bounded_int(
+            data.get("process_limit", 1), "campaign.process_limit", minimum=1, maximum=1024
+        ),
+        engines=engines,
+        build_variants=variants,
+        changed_functions=_optional_string_tuple(
+            data.get("changed_functions"), "campaign.changed_functions"
+        ),
+        oracles=oracles,
+    )
+
+
+def _build_variant(value: object, field: str) -> BuildVariant:
+    data = _mapping(value, field)
+    name = _string(data.get("name"), f"{field}.name")
+    if not _SLUG.fullmatch(name):
+        _invalid(f"{field}.name must be a lowercase slug of at most 63 characters")
+    build = _optional_command_group(data.get("build"), f"{field}.build")
+    fuzz = _optional_command_group(data.get("fuzz"), f"{field}.fuzz")
+    environment_data = _mapping(data.get("environment", {}), f"{field}.environment")
+    environment: dict[str, str] = {}
+    for key, item in environment_data.items():
+        environment[_string(key, f"{field}.environment key")] = _string(
+            item, f"{field}.environment.{key}"
+        )
+    return BuildVariant(
+        name=name,
+        build_steps=build,
+        fuzz_steps=fuzz,
+        environment=MappingProxyType(environment),
+        changed_functions=_optional_string_tuple(
+            data.get("changed_functions"), f"{field}.changed_functions"
+        ),
+    )
+
+
+def _oracle_config(value: object, field: str) -> OracleConfig:
+    data = _mapping(value, field)
+    name = _string(data.get("name"), f"{field}.name")
+    if not _SLUG.fullmatch(name):
+        _invalid(f"{field}.name must be a lowercase slug of at most 63 characters")
+    kind = _string(data.get("kind"), f"{field}.kind")
+    if kind not in _ORACLE_KINDS:
+        _invalid(f"{field}.kind must be one of: {', '.join(sorted(_ORACLE_KINDS))}")
+    command = _command(data.get("command"), f"{field}.command")
+    return OracleConfig(name=name, kind=kind, command=command)
+
+
+def _economics_config(value: object) -> Economics:
+    data = _mapping(value, "economics")
+    confidence = _factor(data.get("reward_confidence", 0.0), "economics.reward_confidence")
+    return Economics(
+        expected_reward=_optional_nonnegative_number(
+            data.get("expected_reward"), "economics.expected_reward"
+        ),
+        reward_confidence=confidence,
+        cpu_hour_cost=_nonnegative_number(
+            data.get("cpu_hour_cost", 0.0), "economics.cpu_hour_cost"
+        ),
+    )
 
 
 def _factor(value: object, field: str) -> float:

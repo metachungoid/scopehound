@@ -188,6 +188,35 @@ def manifest_digest(manifest: Manifest) -> str:
         "environment": dict(manifest.environment),
         "corpus": asdict(manifest.corpus),
         "opportunity": asdict(manifest.opportunity),
+        "campaign": {
+            "max_workers": manifest.campaign.max_workers,
+            "max_retries": manifest.campaign.max_retries,
+            "share_corpus": manifest.campaign.share_corpus,
+            "wall_clock_seconds": manifest.campaign.wall_clock_seconds,
+            "cpu_seconds": manifest.campaign.cpu_seconds,
+            "process_limit": manifest.campaign.process_limit,
+            "engines": list(manifest.campaign.engines),
+            "changed_functions": list(manifest.campaign.changed_functions),
+            "build_variants": [
+                {
+                    "name": variant.name,
+                    "build": _group_payload(variant.build_steps),
+                    "fuzz": _group_payload(variant.fuzz_steps),
+                    "environment": dict(variant.environment),
+                    "changed_functions": list(variant.changed_functions),
+                }
+                for variant in manifest.campaign.build_variants
+            ],
+            "oracles": [
+                {"name": oracle.name, "kind": oracle.kind, "command": list(oracle.command)}
+                for oracle in manifest.campaign.oracles
+            ],
+        },
+        "economics": {
+            "expected_reward": manifest.economics.expected_reward,
+            "reward_confidence": manifest.economics.reward_confidence,
+            "cpu_hour_cost": manifest.economics.cpu_hour_cost,
+        },
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
