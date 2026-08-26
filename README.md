@@ -220,7 +220,7 @@ python3 -m unittest tests.integration.test_cjson_campaign -v
 The verified control result reproduces the public v1.7.17 sanitizer signal and
 does not reproduce it on v1.7.18. The pinned current revision is exercised in
 the same run, but its evidence remains local and is never promoted or sent by
-ScopeHound. A passing run reports `122` tests when included in the full suite:
+ScopeHound. The current full suite reports `151` tests (with environment-dependent skips when tools are absent):
 
 ```bash
 python3 -m unittest discover -s tests -q
@@ -559,6 +559,9 @@ private disclosure.
 - `benchmark`: measure local fixture effectiveness and quality gates
 - `engines`: list local engines and explicit availability/skip reasons
 - `campaign`: run or resume a staged, scope-gated local campaign
+- `campaign-matrix`: run or resume bounded target/variant/engine jobs
+- `oracle`: run a bounded local differential or metamorphic oracle
+- `issue`: promote a gated candidate into an immutable review package
 - `controls`: plan a cJSON positive/fixed/current control matrix
 
 Every command supports `--help`; result-producing commands also support

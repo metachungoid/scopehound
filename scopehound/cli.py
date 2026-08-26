@@ -326,7 +326,7 @@ def entrypoint() -> None:
 def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "engines":
         engines = [
-            {"name": item.name, "available": item.available, "executable": item.executable, "reason": item.reason}
+            {"name": item.name, "available": item.available, "executable": item.executable, "reason": item.reason, "adapter": item.adapter}
             for item in list_engines(include_optional=args.all_engines)
         ]
         _success(args, {"engines": engines}, "\n".join(
