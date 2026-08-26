@@ -2,7 +2,8 @@
 
 ## Status
 
-Approved direction; implementation is gated on review of this specification.
+Approved direction; implementation follows the additional yield, coverage,
+oracle, and reporting requirements below.
 
 ## Goal
 
@@ -54,6 +55,13 @@ The first implementation supports the existing `standalone` engine and
 silently substituting another engine. Build variants are command groups, not
 an implicit compiler or sanitizer installer.
 
+The scheduler also records a stable job key, per-job CPU seconds, worker
+limits, retry count, corpus seed/dictionary metadata, and a resumable digest.
+Optional AFL++ and Honggfuzz/Centipede integrations are represented as
+availability-aware adapters; an absent binary is a visible skip rather than a
+fallback. Shared-corpus jobs may be enabled explicitly and remain bounded by
+the manifest's input, process, and wall-clock limits.
+
 ### 3. Finding gate
 
 After each job, ScopeHound parses sanitizer output, normalizes stacks, hashes
@@ -70,6 +78,12 @@ promotion only when:
 
 Failed gates produce a machine-readable blocked reason and retain evidence;
 they cannot be promoted as new issues.
+
+Finding identity includes both the existing sanitizer fingerprint and a
+normalized root-cause signature (sanitizer, kind, function, source basename,
+and top frames). Known issues may list aliases for either identity. Timeout,
+OOM, and hang signals are recorded as resource candidates in a separate class;
+they are never silently promoted as memory-corruption findings.
 
 ### 4. Issue package
 
@@ -88,6 +102,19 @@ The package is immutable once created: an existing output directory is refused
 unless the caller selects a new path. The report uses “potential finding” and
 “new candidate,” never “confirmed vulnerability” or “zero-day.”
 
+Issue metadata includes a manually supplied target opportunity score and a
+transparent expected-yield estimate. The estimate is an operational
+prioritization metric based on scope confidence, attacker reachability,
+criticality, duplicate risk, observed candidate rate, replay rate, and CPU
+cost. It is not a bounty prediction, a guarantee of profit, or a substitute
+for program terms and human severity assessment.
+
+Optional differential/metamorphic jobs compare two authorized local build
+variants or a round-trip oracle. The result records the oracle, input digest,
+and both outputs; oracle disagreements remain candidates until sanitizer and
+scope gates pass. A changed-function hint may prioritize jobs, but ScopeHound
+does not infer a vulnerability from a diff alone.
+
 ### 5. Proof-of-concept validation
 
 The implementation will run against a small local C fixture with an
@@ -102,6 +129,8 @@ passes the same gates and subsequent human duplicate review.
 - Existing single-target commands continue to work unchanged.
 - New campaign scheduling is exposed through the existing `campaign` command
   with a matrix manifest and JSON output containing per-job state.
+- A `campaign-matrix` command expands and executes the bounded target matrix,
+  returning per-job states and expected-yield metrics without remote scanning.
 - New issue promotion is exposed as `issue` with required manifest, artifact,
   findings, reproduction, and known-issue comparison inputs; optional triage,
   minimization, coverage, and campaign records are copied when present.
@@ -117,12 +146,16 @@ passes the same gates and subsequent human duplicate review.
 - A duplicate or regression is recorded with its reason and exits nonzero from
   issue promotion without deleting evidence.
 - JSON records are written atomically and use stable key ordering.
+- No command scrapes bounty programs, probes remote targets, or submits a
+  disclosure. Any payout or program metadata is researcher-entered and is
+  preserved as provenance only.
 
 ## Testing and acceptance criteria
 
 - Unit tests cover matrix expansion, worker limits, resume/digest behavior,
   replay attempt accounting, promotion gate decisions, alias deduplication,
-  issue JSON schema, report rendering, and path containment.
+  issue JSON schema, report rendering, path containment, engine availability,
+  differential/resource candidate classification, and expected-yield math.
 - End-to-end tests run the controlled C fixture through two matching replays
   and verify a `new_candidate` issue package.
 - End-to-end negative tests verify that a known fingerprint, a different
