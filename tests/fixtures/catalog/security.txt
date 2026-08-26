@@ -1,0 +1,3 @@
+Contact: mailto:security@example.test
+Policy: https://example.test/security
+Canonical: https://example.test/.well-known/security.txt
