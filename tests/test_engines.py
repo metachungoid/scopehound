@@ -22,12 +22,15 @@ class EngineTests(unittest.TestCase):
         self.assertTrue(all(len(item) <= 8 for item in first))
 
     def test_engine_listing_does_not_claim_missing_libfuzzer(self) -> None:
-        names = {item.name: item for item in list_engines()}
+        names = {item.name: item for item in list_engines(include_optional=True)}
 
         self.assertIn("standalone", names)
         self.assertIn("libfuzzer", names)
         if shutil.which("clang") is None:
             self.assertFalse(names["libfuzzer"].available)
+        for optional in ("afl++", "honggfuzz", "centipede"):
+            self.assertIn(optional, names)
+            self.assertIsInstance(names[optional].adapter, str)
 
     def test_standalone_dry_run_does_not_launch_binary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

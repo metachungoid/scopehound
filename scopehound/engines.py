@@ -19,6 +19,7 @@ class EngineInfo:
     available: bool
     executable: str | None
     reason: str
+    adapter: str = ""
 
 
 @dataclass(frozen=True)
@@ -38,19 +39,43 @@ class EngineRun:
     skipped_reason: str | None = None
 
 
-def list_engines() -> tuple[EngineInfo, ...]:
+def list_engines(*, include_optional: bool = False) -> tuple[EngineInfo, ...]:
     gcc = shutil.which("gcc")
     clang = shutil.which("clang")
-    return (
+    core = (
         EngineInfo(
             "standalone", gcc is not None, gcc,
             "available" if gcc else "gcc is not installed",
+            "portable-file-driver",
         ),
         EngineInfo(
             "libfuzzer", clang is not None, clang,
             "available" if clang else "clang/libFuzzer is not installed",
+            "llvm-libfuzzer",
         ),
     )
+    optional = (
+        EngineInfo(
+            "afl++", shutil.which("afl-fuzz") is not None, shutil.which("afl-fuzz"),
+            "available" if shutil.which("afl-fuzz") else "afl-fuzz is not installed",
+            "afl++",
+        ),
+        EngineInfo(
+            "honggfuzz", shutil.which("honggfuzz") is not None, shutil.which("honggfuzz"),
+            "available" if shutil.which("honggfuzz") else "honggfuzz is not installed",
+            "honggfuzz",
+        ),
+        EngineInfo(
+            "centipede", shutil.which("centipede") is not None, shutil.which("centipede"),
+            "available" if shutil.which("centipede") else "centipede is not installed",
+            "centipede",
+        ),
+    )
+    return core + optional if include_optional else core
+
+
+def list_engine_adapters() -> tuple[EngineInfo, ...]:
+    return list_engines(include_optional=True)
 
 
 def deterministic_mutations(
