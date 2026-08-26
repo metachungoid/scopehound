@@ -7,14 +7,16 @@ from pathlib import Path
 from typing import Mapping
 
 from scopehound.confirmation import CrossBuildConfirmation
+from scopehound.approval import ApprovalRecord
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import Finding, load_findings
 from scopehound.known_issues import IssueComparison
 from scopehound.manifest import Manifest
-from scopehound.policy import require_authorized
+from scopehound.policy import require_approved, require_authorized
 from scopehound.reporting import render_report, write_report
 from scopehound.reproduction import ReproductionResult, load_reproduction
 from scopehound.triage import inspect_artifact
+from scopehound.verification import VerificationResult
 
 
 @dataclass(frozen=True)
@@ -48,8 +50,13 @@ def promote_issue(
     controls_path: Path | None = None,
     confirmation_path: Path | None = None,
     economics_path: Path | None = None,
+    approval: ApprovalRecord | None = None,
+    verification: VerificationResult | None = None,
 ) -> IssuePackage:
-    require_authorized(manifest)
+    if approval is None:
+        require_authorized(manifest)
+    else:
+        require_approved(manifest, approval)
     if output_dir.exists():
         raise ScopeHoundError("output_exists", f"issue package already exists: {output_dir}")
     if not manifest_path.is_file() or manifest_path.is_symlink():
@@ -69,6 +76,8 @@ def promote_issue(
         comparison,
         confirmation,
     )
+    if verification is not None and not verification.promotable:
+        raise ScopeHoundError("issue_blocked", "; ".join(verification.reasons))
     if decision.status != "promoted":
         raise ScopeHoundError("issue_blocked", "; ".join(decision.reasons))
 
@@ -123,6 +132,8 @@ def promote_issue(
         ],
         "gate": {"status": decision.status, "reasons": list(decision.reasons)},
     }
+    if verification is not None:
+        issue_payload["verification"] = verification.to_dict()
     issue_json = output_dir / "issue.json"
     _atomic_json(issue_json, issue_payload)
     report = render_report(

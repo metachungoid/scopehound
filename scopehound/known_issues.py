@@ -30,6 +30,21 @@ class IssueComparison:
     root_cause: str | None = None
 
 
+@dataclass(frozen=True)
+class DuplicateEvidence:
+    source: str
+    status: str
+    checked_at: str
+    query: str = ""
+    notes: str = ""
+
+    def __post_init__(self) -> None:
+        if self.status not in {"no_match", "match", "inconclusive"}:
+            raise ScopeHoundError("duplicate_invalid", f"unsupported duplicate evidence status: {self.status}")
+        if not self.source or not self.checked_at:
+            raise ScopeHoundError("duplicate_invalid", "duplicate evidence source and checked_at are required")
+
+
 def load_known_issues(path: Path) -> tuple[KnownIssue, ...]:
     try:
         if path.suffix.lower() == ".csv":
