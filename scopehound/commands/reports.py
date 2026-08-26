@@ -27,6 +27,9 @@ def draft(
         matches = tuple(item for item in findings if item.artifact == artifact.path.name)
         finding = matches[0] if matches else (findings[0] if len(findings) == 1 else None)
     reproduction = load_reproduction(reproduction_path) if reproduction_path else None
+    if reproduction is not None and reproduction.artifact != artifact.path.name:
+        from scopehound.errors import ScopeHoundError
+        raise ScopeHoundError("input_invalid", "reproduction artifact does not match requested artifact")
     report = render_report_profile(manifest, artifact, artifact.path.name, finding, reproduction, profile=profile)
     write_report(report, output)
     return {"profile": profile, "output": str(output), "artifact_sha256": artifact.sha256}

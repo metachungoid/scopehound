@@ -61,6 +61,51 @@ The authorization record is an audit checkpoint, not proof that its claims are
 true. The researcher remains responsible for complying with the program,
 repository, and applicable law.
 
+## Approval-gated adaptive research
+
+For a target you are permitted to assess, keep discovery and execution as
+separate records. `discover-targets` reads local `security.txt`/`SECURITY.md`
+metadata only; it does not build code, probe services, or contact maintainers:
+
+```bash
+scopehound discover-targets \
+  --root ./candidate-repository \
+  --output ./catalog.json \
+  --checked-at 2026-08-26
+scopehound approve-target \
+  --catalog ./catalog.json \
+  --candidate-id CANDIDATE_ID \
+  --revision IMMUTABLE_COMMIT \
+  --reviewer you \
+  --approved-at 2026-08-26 \
+  --expires-at 2026-09-26 \
+  --output ./approval.json
+```
+
+Review the catalog and approval before using them. The adaptive planner will
+refuse to expand arms without a current `sandboxed-local` approval and a
+matching policy digest:
+
+```bash
+scopehound plan-experiments \
+  --manifest examples/approved-target.json \
+  --approval ./approval.json \
+  --output ./arms.json
+scopehound optimize-campaign \
+  --manifest examples/approved-target.json \
+  --approval ./approval.json \
+  --arms ./arms.json \
+  --metrics ./round-1-metrics.json \
+  --round 1 \
+  --output ./round-2.json
+```
+
+The optimizer's primary signal is promotable new candidates per CPU-hour;
+coverage and replay are bounded proxy signals, and researcher-entered reward
+metadata never overrides measured candidate yield or guarantees a payout.
+Unavailable optional engines are visible skips. Existing `campaign-matrix`
+and legacy manifest commands remain available for compatibility.
+
 Validate and score a manifest:
 
 ```bash
@@ -220,7 +265,8 @@ python3 -m unittest tests.integration.test_cjson_campaign -v
 The verified control result reproduces the public v1.7.17 sanitizer signal and
 does not reproduce it on v1.7.18. The pinned current revision is exercised in
 the same run, but its evidence remains local and is never promoted or sent by
-ScopeHound. The current full suite reports `151` tests (with environment-dependent skips when tools are absent):
+ScopeHound. The full suite includes unit and local integration tests (with
+environment-dependent skips when tools are absent):
 
 ```bash
 python3 -m unittest discover -s tests -q
@@ -258,6 +304,25 @@ These are historical validation artifacts for the pipeline. They do not claim
 new vulnerabilities, and ScopeHound does not transmit findings to maintainers.
 
 ## Triage and report drafts
+
+The report factory offers channel-shaped drafts without sending anything:
+
+```bash
+scopehound draft-report \
+  --manifest target.json \
+  --artifact .scopehound/targets/example-parser/artifacts/crash-001 \
+  --findings .scopehound/targets/example-parser/findings.json \
+  --reproduction .scopehound/targets/example-parser/reproduction.json \
+  --profile private-email \
+  --output ./client-draft.md
+```
+
+Profiles are `neutral`, `private-email`, and `platform-form`. Every draft is
+explicitly a human-review evidence draft and avoids claims of a zero-day,
+confirmed vulnerability, or guaranteed bounty. The stricter verification API
+requires two matching replays, root-cause and reachability review, cross-build
+confirmation, public and private duplicate evidence, a latest-revision check,
+and a scope recheck before a candidate is promotable.
 
 After preparation, inspect the checkout for existing libFuzzer and OSS-Fuzz
 harnesses:

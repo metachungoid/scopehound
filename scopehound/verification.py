@@ -57,11 +57,20 @@ def verify_candidate(
     gates: dict[str, bool] = {
         "artifact": artifact.is_file() and not artifact.is_symlink(),
         "sanitizer": finding.sanitizer in {"AddressSanitizer", "UndefinedBehaviorSanitizer", "MemorySanitizer"},
-        "reproduction": reproduction.status == "reproduced" and reproduction.matching_attempts >= 2,
+        "reproduction": (
+            reproduction.status == "reproduced"
+            and reproduction.expected_fingerprint == finding.fingerprint
+            and finding.fingerprint in reproduction.observed_fingerprints
+            and reproduction.matching_attempts >= 2
+        ),
         "comparison": comparison.label == "new_candidate" and comparison.fingerprint == finding.fingerprint,
         "root_cause": bool(finding.root_cause) and root_cause_review,
         "reachability": reachability_review,
-        "cross_build": confirmation is not None and confirmation.status == "confirmed_across_builds",
+        "cross_build": (
+            confirmation is not None
+            and confirmation.status == "confirmed_across_builds"
+            and confirmation.root_cause == finding.root_cause
+        ),
         "duplicate_search": {item.source for item in evidence} >= {"public", "private"}
         and all(item.status == "no_match" for item in evidence),
         "latest_revision": latest_revision_check,

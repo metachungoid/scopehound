@@ -41,11 +41,17 @@ class OptimizerState:
 
 
 def calculate_reward(metrics: ArmMetrics, config: OptimizerConfig) -> float:
-    """Return a bounded deterministic reward whose dominant signal is new candidates/CPU-hour."""
-    if metrics.cpu_seconds < 0 or metrics.promotable_candidates < 0:
+    """Return a deterministic reward dominated by new candidates per CPU-hour."""
+    if any(
+        value < 0
+        for value in (
+            metrics.cpu_seconds, metrics.promotable_candidates, metrics.candidate_count,
+            metrics.duplicate_count, metrics.matching_replays, metrics.replay_attempts,
+        )
+    ):
         raise ScopeHoundError("optimizer_invalid", "metrics cannot be negative")
     cpu_hours = max(metrics.cpu_seconds / 3600.0, 1 / 3600.0)
-    candidate_rate = min(1.0, metrics.promotable_candidates / cpu_hours)
+    candidate_rate = metrics.promotable_candidates / cpu_hours
     duplicate_quality = 1.0 - min(1.0, metrics.duplicate_count / max(1, metrics.candidate_count))
     replay_quality = min(1.0, metrics.matching_replays / max(1, metrics.replay_attempts))
     coverage = min(1.0, max(0.0, metrics.coverage_delta))
@@ -86,13 +92,18 @@ def record_round(
     state: OptimizerState,
     arms: Sequence[ExperimentArm],
     observations: Mapping[str, ArmMetrics],
+    config: OptimizerConfig | None = None,
 ) -> OptimizerState:
     current = {arm.arm_id: arm for arm in arms}
     history = list(state.history)
+    reward_config = config or OptimizerConfig()
     for arm_id in sorted(observations):
         if arm_id not in current:
             raise ScopeHoundError("optimizer_invalid", f"unknown arm observation: {arm_id}")
-        history.append(ArmObservation(arm_id, state.round_index, observations[arm_id], 0.0))
+        history.append(ArmObservation(
+            arm_id, state.round_index, observations[arm_id],
+            calculate_reward(observations[arm_id], reward_config),
+        ))
     return OptimizerState(
         campaign_digest=state.campaign_digest,
         round_index=state.round_index + 1,

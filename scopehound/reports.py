@@ -53,6 +53,13 @@ def render_report_profile(
         )
     else:
         channel = "## Neutral disclosure handoff\n\nReview this evidence draft and select the current private disclosure channel.\n\n"
+    channel += (
+        "## Impact hypothesis\n\n"
+        "- Hypothesis: complete after human review of attacker-controlled reachability.\n"
+        "- Severity and affected deployments: pending human assessment.\n\n"
+        "## Remediation area\n\n"
+        "- [ ] Identify the responsible parser, allocator, bounds check, or ownership fix.\n\n"
+    )
     if verification is not None:
         channel += "## Verification gate summary\n\n"
         channel += "\n".join(f"- {name}: {'pass' if passed else 'blocked'}" for name, passed in verification.gates.items())

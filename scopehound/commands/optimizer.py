@@ -20,6 +20,8 @@ def optimize(
     *,
     round_index: int,
 ) -> dict[str, object]:
+    if round_index < 0:
+        raise ScopeHoundError("optimizer_invalid", "round must be non-negative")
     manifest = load_manifest(manifest_path)
     approval = load_approval(approval_path)
     require_approved(manifest, approval)

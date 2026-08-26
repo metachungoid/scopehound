@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "target": {
+    "name": "approved-parser",
+    "repository": "https://example.invalid/approved-parser.git",
+    "revision": "0123456789abcdef0123456789abcdef01234567",
+    "language": "c"
+  },
+  "authorization": {
+    "status": "authorized",
+    "policy_url": "https://example.invalid/security-policy",
+    "policy_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "checked_at": "2026-08-26",
+    "eligible_classes": ["memory-corruption"],
+    "notes": "Template: replace with a current policy digest and retain the matching approval record."
+  },
+  "commands": {
+    "build": ["cmake", "--build", "build"],
+    "fuzz": ["./build/parser_fuzzer"],
+    "reproduce": ["./build/parser_fuzzer", "{artifact}"]
+  },
+  "corpus": {
+    "max_input_size": 1048576,
+    "coverage_mode": "none"
+  },
+  "campaign": {
+    "max_workers": 2,
+    "engines": ["standalone", "libfuzzer"],
+    "build_variants": [{"name": "asan"}, {"name": "ubsan"}],
+    "optimizer": {
+      "exploration_fraction": 0.2,
+      "halving_factor": 2,
+      "candidate_weight": 0.7,
+      "duplicate_weight": 0.15,
+      "replay_weight": 0.1,
+      "coverage_weight": 0.05
+    }
+  },
+  "environment": {
+    "CC": "clang",
+    "CFLAGS": "-O1 -g -fsanitize=address,undefined"
+  },
+  "opportunity": {
+    "bounty_eligibility": 1.0,
+    "attacker_reachability": 0.8,
+    "code_criticality": 0.7,
+    "change_recency": 0.6,
+    "fuzzing_gap": 0.9,
+    "build_reproducibility": 0.8,
+    "duplicate_risk": 0.4
+  }
+}
