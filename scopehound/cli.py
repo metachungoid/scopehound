@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Sequence
 
 from scopehound.bundling import create_bundle
+from scopehound.commands.catalog import approve as approve_target, discover as discover_targets
+from scopehound.commands.experiments import plan as plan_experiments
+from scopehound.commands.optimizer import optimize as optimize_campaign
+from scopehound.commands.reports import draft as draft_report
 from scopehound.analyze import import_fuzz_introspector, parse_ast_json, rank_candidates
 from scopehound.benchmark import run_benchmark, write_benchmark_markdown
 from scopehound.campaign import create_campaign, load_campaign, run_stage
@@ -258,6 +262,39 @@ def build_parser() -> argparse.ArgumentParser:
     triage.add_argument("--output", required=True, type=Path)
     _json_argument(triage)
 
+    catalog = subparsers.add_parser("discover-targets", help="read local target security metadata into a catalog")
+    catalog.add_argument("--root", required=True, type=Path)
+    catalog.add_argument("--output", required=True, type=Path)
+    catalog.add_argument("--checked-at")
+    _json_argument(catalog)
+
+    approve = subparsers.add_parser("approve-target", help="create an immutable approval for a catalog candidate")
+    approve.add_argument("--catalog", required=True, type=Path)
+    approve.add_argument("--candidate-id", required=True)
+    approve.add_argument("--revision", required=True)
+    approve.add_argument("--reviewer", required=True)
+    approve.add_argument("--approved-at", required=True)
+    approve.add_argument("--expires-at", required=True)
+    approve.add_argument("--testing-mode", choices=("sandboxed-local", "read-only"), default="sandboxed-local")
+    approve.add_argument("--notes", default="")
+    approve.add_argument("--output", required=True, type=Path)
+    _json_argument(approve)
+
+    experiments = subparsers.add_parser("plan-experiments", help="expand approved experiment arms")
+    experiments.add_argument("--manifest", required=True, type=Path)
+    experiments.add_argument("--approval", required=True, type=Path)
+    experiments.add_argument("--output", required=True, type=Path)
+    _json_argument(experiments)
+
+    optimizer = subparsers.add_parser("optimize-campaign", help="select the next adaptive experiment round")
+    optimizer.add_argument("--manifest", required=True, type=Path)
+    optimizer.add_argument("--approval", required=True, type=Path)
+    optimizer.add_argument("--arms", required=True, type=Path)
+    optimizer.add_argument("--metrics", required=True, type=Path)
+    optimizer.add_argument("--round", required=True, type=int, dest="round_index")
+    optimizer.add_argument("--output", required=True, type=Path)
+    _json_argument(optimizer)
+
     report = subparsers.add_parser("report", help="write a human-review disclosure draft")
     _manifest_argument(report)
     report.add_argument("--artifact", required=True, type=Path)
@@ -268,6 +305,15 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--controls", type=Path)
     report.add_argument("--output", required=True, type=Path)
     _json_argument(report)
+
+    draft = subparsers.add_parser("draft-report", help="write a channel-shaped human-review disclosure draft")
+    _manifest_argument(draft)
+    draft.add_argument("--artifact", required=True, type=Path)
+    draft.add_argument("--findings", type=Path)
+    draft.add_argument("--reproduction", type=Path)
+    draft.add_argument("--profile", choices=("neutral", "private-email", "platform-form"), default="neutral")
+    draft.add_argument("--output", required=True, type=Path)
+    _json_argument(draft)
 
     issue = subparsers.add_parser(
         "issue", help="promote a gated local candidate into an immutable review package"
@@ -324,6 +370,42 @@ def entrypoint() -> None:
 
 
 def _dispatch(args: argparse.Namespace) -> int:
+    if args.command == "discover-targets":
+        payload = discover_targets(args.root, args.output, checked_at=args.checked_at)
+        _success(args, payload, f"discovered {payload['count']} target candidates -> {args.output}")
+        return 0
+
+    if args.command == "approve-target":
+        payload = approve_target(
+            args.catalog, args.candidate_id, args.output,
+            revision=args.revision, reviewer=args.reviewer,
+            approved_at=args.approved_at, expires_at=args.expires_at,
+            testing_mode=args.testing_mode, notes=args.notes,
+        )
+        _success(args, payload, f"approved {args.candidate_id} for {args.testing_mode} -> {args.output}")
+        return 0
+
+    if args.command == "plan-experiments":
+        payload = plan_experiments(args.manifest, args.approval, args.output)
+        _success(args, payload, f"planned {payload['count']} experiment arms -> {args.output}")
+        return 0
+
+    if args.command == "optimize-campaign":
+        payload = optimize_campaign(
+            args.manifest, args.approval, args.arms, args.metrics, args.output,
+            round_index=args.round_index,
+        )
+        _success(args, payload, f"selected {payload['selected']} arms for round {args.round_index} -> {args.output}")
+        return 0
+
+    if args.command == "draft-report":
+        payload = draft_report(
+            args.manifest, args.artifact, args.output, profile=args.profile,
+            findings_path=args.findings, reproduction_path=args.reproduction,
+        )
+        _success(args, payload, f"{args.profile} report draft -> {args.output}")
+        return 0
+
     if args.command == "engines":
         engines = [
             {"name": item.name, "available": item.available, "executable": item.executable, "reason": item.reason, "adapter": item.adapter}
