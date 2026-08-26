@@ -25,6 +25,24 @@ class KnownIssuesTests(unittest.TestCase):
         self.assertEqual(results[0].label, "possible_regression")
         self.assertEqual(results[0].issue_summary, "known")
 
+    def test_aliases_and_root_cause_are_duplicate_signals(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "issues.json"
+            path.write_text(
+                '[{"fingerprint": "other", "aliases": ["alias-root"], "summary": "known"}]',
+                encoding="utf-8",
+            )
+            issues = load_known_issues(path)
+            finding = Finding(
+                "AddressSanitizer", "heap", "heap", "a.c:1:1", "parse", (),
+                "new-fingerprint", "crash", "raw", root_cause="alias-root",
+            )
+
+            result = compare_known_issues((finding,), issues, current_revision="v1")[0]
+
+        self.assertEqual(result.label, "possible_duplicate")
+        self.assertEqual(result.matched_by, "alias")
+
     def test_csv_unknown_issue_is_new_candidate(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             path = Path(temp_dir) / "issues.csv"

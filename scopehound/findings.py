@@ -24,6 +24,7 @@ class Finding:
     reproducibility: str = "unverified"
     normalized_stack: tuple[str, ...] = ()
     provenance: Mapping[str, object] | None = None
+    root_cause: str = ""
 
 
 def load_findings(path: Path) -> tuple[Finding, ...]:
@@ -38,6 +39,11 @@ def load_findings(path: Path) -> tuple[Finding, ...]:
                 reproducibility=item.get("reproducibility", "unverified"),
                 normalized_stack=tuple(item.get("normalized_stack", ())),
                 provenance=item.get("provenance"),
+                root_cause=item.get("root_cause") or _root_cause_signature(
+                    item.get("sanitizer", ""), item.get("kind", ""),
+                    item.get("function", ""), item.get("location", ""),
+                    tuple(item.get("stack", ())),
+                ),
             )
             for item in payload
         )
@@ -90,6 +96,9 @@ def parse_sanitizer_output(output: str, artifact: Path | None = None) -> tuple[F
             fingerprint=fingerprint,
             artifact=artifact_name,
             raw_output=block.strip(),
+            root_cause=_root_cause_signature(
+                "AddressSanitizer", kind, function, location, frames
+            ),
         )
 
     for match in _UBSAN.finditer(output):
@@ -107,6 +116,9 @@ def parse_sanitizer_output(output: str, artifact: Path | None = None) -> tuple[F
             fingerprint=fingerprint,
             artifact=artifact_name,
             raw_output=match.group(0),
+            root_cause=_root_cause_signature(
+                "UndefinedBehaviorSanitizer", kind, "unknown", location, ()
+            ),
         )
     return tuple(findings[key] for key in sorted(findings))
 
@@ -141,6 +153,20 @@ def _clean_kind(kind: str) -> str:
 
 def _fingerprint(sanitizer: str, kind: str, location: str, function: str, frames: tuple[str, ...]) -> str:
     source = "|".join((sanitizer, kind, location, function, *frames[:3]))
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()[:20]
+
+
+def _root_cause_signature(
+    sanitizer: str,
+    kind: str,
+    function: str,
+    location: str,
+    frames: tuple[str, ...],
+) -> str:
+    basename_match = re.search(r"(?:^|[/\\])([^/\\:]+):\d+(?::\d+)?$", location)
+    basename = basename_match.group(1) if basename_match else location.rsplit("/", 1)[-1]
+    frame_functions = tuple(frame.split(" at ", 1)[0] for frame in frames[:3])
+    source = "|".join((sanitizer, kind, function, basename, *frame_functions))
     return hashlib.sha256(source.encode("utf-8")).hexdigest()[:20]
 
 

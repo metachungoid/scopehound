@@ -29,6 +29,14 @@ class FindingsTests(unittest.TestCase):
         self.assertEqual(finding.artifact, "crash-001")
         self.assertTrue(finding.fingerprint)
         self.assertTrue(any("parse_packet" in frame for frame in finding.stack))
+        self.assertTrue(finding.root_cause)
+
+    def test_root_cause_signature_ignores_source_line_changes(self) -> None:
+        first = parse_sanitizer_output(ASAN_LOG, Path("crash-001"))[0]
+        second = parse_sanitizer_output(ASAN_LOG.replace(":142:9", ":999:2"), Path("crash-002"))[0]
+
+        self.assertNotEqual(first.fingerprint, second.fingerprint)
+        self.assertEqual(first.root_cause, second.root_cause)
 
     def test_deduplicates_repeated_sanitizer_blocks(self) -> None:
         findings = parse_sanitizer_output(ASAN_LOG + "\n" + ASAN_LOG)

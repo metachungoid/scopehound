@@ -32,6 +32,7 @@ class FindingGroup:
     location: str
     function: str
     artifacts: tuple[str, ...]
+    root_cause: str = ""
 
 
 def inspect_artifact(path: Path) -> ArtifactRecord:
@@ -73,25 +74,27 @@ def triage_artifacts(directory: Path) -> TriageResult:
 
 
 def cluster_findings(findings: tuple[Finding, ...]) -> tuple[FindingGroup, ...]:
-    grouped: dict[str, list[Finding]] = {}
+    grouped: dict[tuple[str, str], list[Finding]] = {}
     for finding in findings:
-        grouped.setdefault(finding.fingerprint, []).append(finding)
+        identity = finding.root_cause or finding.fingerprint
+        grouped.setdefault(("root_cause" if finding.root_cause else "fingerprint", identity), []).append(finding)
     result: list[FindingGroup] = []
-    for fingerprint, members in grouped.items():
+    for (_identity_kind, _identity), members in grouped.items():
         ordered = sorted(members, key=lambda item: (item.artifact or "", item.location, item.function))
         representative = ordered[0]
         artifacts = tuple(sorted({item.artifact for item in members if item.artifact}))
         result.append(
             FindingGroup(
-                fingerprint=fingerprint,
+                fingerprint=representative.fingerprint,
                 sanitizer=representative.sanitizer,
                 kind=representative.kind,
                 location=representative.location,
                 function=representative.function,
                 artifacts=artifacts,
+                root_cause=representative.root_cause,
             )
         )
-    return tuple(sorted(result, key=lambda item: item.fingerprint))
+    return tuple(sorted(result, key=lambda item: (item.root_cause, item.fingerprint)))
 
 
 def write_triage(result: TriageResult, output: Path) -> None:
@@ -115,6 +118,7 @@ def write_triage(result: TriageResult, output: Path) -> None:
                 "kind": group.kind,
                 "location": group.location,
                 "sanitizer": group.sanitizer,
+                "root_cause": group.root_cause,
             }
             for group in result.finding_groups
         ],

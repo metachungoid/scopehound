@@ -16,6 +16,8 @@ class KnownIssue:
     summary: str
     first_seen_revision: str | None = None
     fixed_revision: str | None = None
+    root_cause: str | None = None
+    aliases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -24,6 +26,8 @@ class IssueComparison:
     label: str
     issue_summary: str | None
     fixed_revision: str | None
+    matched_by: str | None = None
+    root_cause: str | None = None
 
 
 def load_known_issues(path: Path) -> tuple[KnownIssue, ...]:
@@ -50,6 +54,8 @@ def load_known_issues(path: Path) -> tuple[KnownIssue, ...]:
                 summary=str(item.get("summary", "")),
                 first_seen_revision=_optional_string(item.get("first_seen_revision")),
                 fixed_revision=_optional_string(item.get("fixed_revision")),
+                root_cause=_optional_string(item.get("root_cause")),
+                aliases=_aliases(item.get("aliases")),
             )
         )
     return tuple(sorted(issues, key=lambda issue: issue.fingerprint))
@@ -58,17 +64,37 @@ def load_known_issues(path: Path) -> tuple[KnownIssue, ...]:
 def compare_known_issues(
     findings: tuple[Finding, ...], issues: tuple[KnownIssue, ...], *, current_revision: str
 ) -> tuple[IssueComparison, ...]:
-    index = {issue.fingerprint: issue for issue in issues}
+    index: dict[str, tuple[KnownIssue, str]] = {}
+    for issue in issues:
+        index[issue.fingerprint] = (issue, "fingerprint")
+        if issue.root_cause:
+            index.setdefault(issue.root_cause, (issue, "root_cause"))
+        for alias in issue.aliases:
+            index.setdefault(alias, (issue, "alias"))
     comparisons: list[IssueComparison] = []
     for finding in findings:
-        issue = index.get(finding.fingerprint)
-        if issue is None:
+        matched = index.get(finding.fingerprint) or index.get(finding.root_cause)
+        if matched is None:
             label = "new_candidate"
-        elif issue.fixed_revision and current_revision != issue.fixed_revision:
-            label = "possible_regression"
+            issue = None
+            matched_by = None
         else:
-            label = "possible_duplicate"
-        comparisons.append(IssueComparison(finding.fingerprint, label, issue.summary if issue else None, issue.fixed_revision if issue else None))
+            issue, matched_by = matched
+            label = (
+                "possible_regression"
+                if issue.fixed_revision and current_revision != issue.fixed_revision
+                else "possible_duplicate"
+            )
+        comparisons.append(
+            IssueComparison(
+                finding.fingerprint,
+                label,
+                issue.summary if issue else None,
+                issue.fixed_revision if issue else None,
+                matched_by,
+                finding.root_cause,
+            )
+        )
     return tuple(sorted(comparisons, key=lambda item: item.fingerprint))
 
 
@@ -85,3 +111,11 @@ def write_comparisons(comparisons: tuple[IssueComparison, ...], output: Path) ->
 
 def _optional_string(value: object) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _aliases(value: object) -> tuple[str, ...]:
+    if isinstance(value, str):
+        return tuple(item.strip() for item in value.split(",") if item.strip())
+    if isinstance(value, list):
+        return tuple(item for item in value if isinstance(item, str) and item)
+    return ()

@@ -72,6 +72,20 @@ class TriageTests(unittest.TestCase):
         self.assertEqual(groups[0].fingerprint, first.fingerprint)
         self.assertEqual(groups[0].artifacts, ("crash-001", "crash-002"))
 
+    def test_root_cause_clusters_line_variants(self) -> None:
+        first_log = (
+            "ERROR: AddressSanitizer: heap-buffer-overflow\n"
+            "SUMMARY: AddressSanitizer: heap-buffer-overflow /src/parser.c:12:4 in parse\n"
+        )
+        second_log = first_log.replace(":12:4", ":99:2")
+        first = parse_sanitizer_output(first_log, Path("crash-001"))[0]
+        second = parse_sanitizer_output(second_log, Path("crash-002"))[0]
+
+        groups = cluster_findings((first, second))
+
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].root_cause, first.root_cause)
+
     def test_triage_json_includes_finding_groups(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
