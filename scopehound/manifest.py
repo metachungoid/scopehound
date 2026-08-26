@@ -118,6 +118,17 @@ class CampaignConfig:
     build_variants: tuple[BuildVariant, ...] = ()
     changed_functions: tuple[str, ...] = ()
     oracles: tuple[OracleConfig, ...] = ()
+    optimizer: "OptimizerConfig" = field(default_factory=lambda: OptimizerConfig())
+
+
+@dataclass(frozen=True)
+class OptimizerConfig:
+    exploration_fraction: float = 0.2
+    halving_factor: int = 2
+    candidate_weight: float = 0.7
+    duplicate_weight: float = 0.15
+    replay_weight: float = 0.1
+    coverage_weight: float = 0.05
 
 
 @dataclass(frozen=True)
@@ -439,6 +450,7 @@ def _campaign_config(value: object) -> CampaignConfig:
         _oracle_config(item, f"campaign.oracles[{index}]")
         for index, item in enumerate(oracle_value)
     )
+    optimizer = _optimizer_config(data.get("optimizer", {}))
     share_corpus = data.get("share_corpus", False)
     if not isinstance(share_corpus, bool):
         _invalid("campaign.share_corpus must be a boolean")
@@ -471,6 +483,19 @@ def _campaign_config(value: object) -> CampaignConfig:
             data.get("changed_functions"), "campaign.changed_functions"
         ),
         oracles=oracles,
+        optimizer=optimizer,
+    )
+
+
+def _optimizer_config(value: object) -> OptimizerConfig:
+    data = _mapping(value, "campaign.optimizer")
+    return OptimizerConfig(
+        exploration_fraction=_factor(data.get("exploration_fraction", 0.2), "campaign.optimizer.exploration_fraction"),
+        halving_factor=_bounded_int(data.get("halving_factor", 2), "campaign.optimizer.halving_factor", minimum=2, maximum=16),
+        candidate_weight=_factor(data.get("candidate_weight", 0.7), "campaign.optimizer.candidate_weight"),
+        duplicate_weight=_factor(data.get("duplicate_weight", 0.15), "campaign.optimizer.duplicate_weight"),
+        replay_weight=_factor(data.get("replay_weight", 0.1), "campaign.optimizer.replay_weight"),
+        coverage_weight=_factor(data.get("coverage_weight", 0.05), "campaign.optimizer.coverage_weight"),
     )
 
 

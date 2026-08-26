@@ -220,6 +220,14 @@ def manifest_digest(manifest: Manifest) -> str:
                 {"name": oracle.name, "kind": oracle.kind, "command": list(oracle.command)}
                 for oracle in manifest.campaign.oracles
             ],
+            "optimizer": {
+                "exploration_fraction": manifest.campaign.optimizer.exploration_fraction,
+                "halving_factor": manifest.campaign.optimizer.halving_factor,
+                "candidate_weight": manifest.campaign.optimizer.candidate_weight,
+                "duplicate_weight": manifest.campaign.optimizer.duplicate_weight,
+                "replay_weight": manifest.campaign.optimizer.replay_weight,
+                "coverage_weight": manifest.campaign.optimizer.coverage_weight,
+            },
         },
         "economics": {
             "expected_reward": manifest.economics.expected_reward,
