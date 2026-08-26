@@ -4,7 +4,7 @@ import argparse
 import json
 import shlex
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Sequence
 
@@ -23,6 +23,7 @@ from scopehound.findings import load_findings, parse_sanitizer_output, write_fin
 from scopehound.discovery import discover_harnesses, write_harnesses
 from scopehound.harness import HarnessCandidate, generate_harnesses, write_harnesses as write_generated_harnesses
 from scopehound.manifest import Manifest, load_manifest
+from scopehound.matrix import run_matrix
 from scopehound.minimize import minimize_artifact, write_minimized
 from scopehound.provenance import create_provenance, normalize_stack
 from scopehound.reporting import render_report, write_report
@@ -183,6 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     _json_argument(benchmark)
 
     engines = subparsers.add_parser("engines", help="list local fuzz engines and availability")
+    engines.add_argument("--all", dest="all_engines", action="store_true", help="include optional adapters")
     _json_argument(engines)
 
     campaign = subparsers.add_parser("campaign", help="run or resume a staged local campaign")
@@ -194,6 +196,17 @@ def build_parser() -> argparse.ArgumentParser:
     campaign.add_argument("--force-stage", choices=("prepare", "build", "harness_build", "run", "controls"))
     _execute_argument(campaign)
     _json_argument(campaign)
+
+    campaign_matrix = subparsers.add_parser(
+        "campaign-matrix", help="run or resume a bounded target/variant/engine matrix"
+    )
+    _manifest_argument(campaign_matrix)
+    _workspace_argument(campaign_matrix)
+    _backend_argument(campaign_matrix)
+    campaign_matrix.add_argument("--duration", required=True, type=int, metavar="SECONDS")
+    campaign_matrix.add_argument("--retry", action="store_true", help="retry jobs and retain prior evidence")
+    _execute_argument(campaign_matrix)
+    _json_argument(campaign_matrix)
 
     controls = subparsers.add_parser("controls", help="run or plan a target control matrix")
     controls.add_argument("--target-pack", choices=("cjson",), required=True)
@@ -282,12 +295,46 @@ def _dispatch(args: argparse.Namespace) -> int:
     if args.command == "engines":
         engines = [
             {"name": item.name, "available": item.available, "executable": item.executable, "reason": item.reason}
-            for item in list_engines()
+            for item in list_engines(include_optional=args.all_engines)
         ]
         _success(args, {"engines": engines}, "\n".join(
             f"{item['name']}: {'available' if item['available'] else 'unavailable'} ({item['reason']})"
             for item in engines
         ))
+        return 0
+
+    if args.command == "campaign-matrix":
+        workspace = Workspace(args.workspace)
+        manifest = load_manifest(args.manifest)
+        state = run_matrix(
+            manifest,
+            workspace,
+            duration_seconds=args.duration,
+            execute=args.execute,
+            backend=args.backend,
+            retry=args.retry,
+        )
+        payload = {
+            "target": state.target,
+            "manifest_digest": state.manifest_digest,
+            "executed": bool(args.execute),
+            "max_workers": state.max_workers,
+            "jobs": [
+                {
+                    "job_id": job.job_id,
+                    "variant": job.variant,
+                    "engine": job.engine,
+                    "status": job.status,
+                    "attempts": job.attempts,
+                    "candidate_count": job.candidate_count,
+                    "skipped_reason": job.skipped_reason,
+                }
+                for job in state.jobs
+            ],
+            "expected_yield": asdict(state.expected_yield),
+            "output": str(workspace.matrix_file(state.target)),
+        }
+        _success(args, payload, f"campaign matrix {state.target}: {len(state.jobs)} jobs -> {payload['output']}")
         return 0
 
     if args.command == "campaign":

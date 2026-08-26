@@ -49,6 +49,15 @@ class WorkspaceTests(unittest.TestCase):
                 workspace.controls_dir("example-parser").is_relative_to(workspace.root)
             )
 
+    def test_matrix_state_path_is_target_contained(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Workspace(Path(temp_dir))
+
+            path = workspace.matrix_file("example-parser")
+
+        self.assertEqual(path.name, "matrix.json")
+        self.assertIn("targets", path.parts)
+
     def test_path_traversal_slug_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             workspace = Workspace(Path(temp_dir))

@@ -61,6 +61,9 @@ class Workspace:
     def campaign_file(self, name: str) -> Path:
         return self._contained(self.target_dir(name) / "campaign.json")
 
+    def matrix_file(self, name: str) -> Path:
+        return self._contained(self.target_dir(name) / "matrix.json")
+
     def findings_file(self, name: str) -> Path:
         return self._contained(self.target_dir(name) / "findings.json")
 
