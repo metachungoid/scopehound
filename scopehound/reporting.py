@@ -41,6 +41,7 @@ def render_report(
 - Location: `{finding.location}`
 - Function: `{finding.function}`
 - Fingerprint: `{finding.fingerprint}`
+- Root-cause signature: `{finding.root_cause or 'not recorded'}`
 - Reproducibility status: `{finding.reproducibility}`
 - Stack:
 {stack}"""
@@ -64,6 +65,8 @@ def render_report(
 - Artifact: `{reproduction.artifact}`
 - Expected fingerprint: `{reproduction.expected_fingerprint}`
 - Observed fingerprints: {observed}
+- Replay attempts: `{len(reproduction.attempts) or 1}`
+- Matching replay attempts: `{reproduction.matching_attempts}`
 - Exit code: `{reproduction.returncode}`
 - Replay command: `{json.dumps(list(reproduction.command))}`
 

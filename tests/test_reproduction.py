@@ -9,7 +9,12 @@ from pathlib import Path
 from scopehound.errors import ScopeHoundError
 from scopehound.findings import parse_sanitizer_output
 from scopehound.manifest import validate_manifest
-from scopehound.reproduction import load_reproduction, reproduce_finding, write_reproduction
+from scopehound.reproduction import (
+    load_reproduction,
+    record_replay_attempt,
+    reproduce_finding,
+    write_reproduction,
+)
 from scopehound.workspace import Workspace
 
 from tests.fixtures import valid_manifest_data
@@ -65,6 +70,46 @@ class ReproductionTests(unittest.TestCase):
         self.assertIn(expected, result.observed_fingerprints)
         self.assertEqual(payload["status"], "reproduced")
         self.assertEqual(loaded.status, "reproduced")
+        self.assertEqual(loaded.matching_attempts, 1)
+        self.assertEqual(len(loaded.attempts), 1)
+
+    def test_two_matching_replays_are_accounted_without_losing_evidence(self) -> None:
+        manifest = self._manifest([
+            sys.executable,
+            "-c",
+            "print(" + repr(ASAN_REPRO_LOG) + "); raise SystemExit(1)",
+            "{artifact}",
+        ])
+        with tempfile.TemporaryDirectory() as temp_dir:
+            workspace = Workspace(Path(temp_dir))
+            artifact = workspace.artifacts_dir(manifest.target.name) / "crash-001"
+            artifact.parent.mkdir(parents=True)
+            workspace.repo_dir(manifest.target.name).mkdir(parents=True)
+            artifact.write_bytes(b"boom")
+            expected = parse_sanitizer_output(ASAN_REPRO_LOG, artifact)[0].fingerprint
+            first = reproduce_finding(manifest, workspace, artifact, expected, execute=True)
+            second = reproduce_finding(manifest, workspace, artifact, expected, execute=True)
+
+        merged = record_replay_attempt(first, second)
+
+        self.assertEqual(merged.status, "reproduced")
+        self.assertEqual(merged.matching_attempts, 2)
+        self.assertEqual(len(merged.attempts), 2)
+
+    def test_old_reproduction_record_loads_with_one_attempt(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "old.json"
+            output.write_text(json.dumps({
+                "artifact": "crash", "expected_fingerprint": "fp",
+                "observed_fingerprints": ["fp"], "status": "reproduced",
+                "command": ["./fuzzer", "crash"], "returncode": 1,
+                "stdout": "asan", "stderr": "",
+            }), encoding="utf-8")
+
+            result = load_reproduction(output)
+
+        self.assertEqual(result.matching_attempts, 1)
+        self.assertEqual(len(result.attempts), 1)
 
     def test_execute_distinguishes_missing_reproduction(self) -> None:
         manifest = self._manifest([sys.executable, "-c", "print('no sanitizer')", "{artifact}"])
