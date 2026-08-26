@@ -11,6 +11,7 @@ from scopehound.errors import ScopeHoundError
 from scopehound.findings import Finding, load_findings
 from scopehound.known_issues import IssueComparison
 from scopehound.manifest import Manifest
+from scopehound.policy import require_authorized
 from scopehound.reporting import render_report, write_report
 from scopehound.reproduction import ReproductionResult, load_reproduction
 from scopehound.triage import inspect_artifact
@@ -48,6 +49,7 @@ def promote_issue(
     confirmation_path: Path | None = None,
     economics_path: Path | None = None,
 ) -> IssuePackage:
+    require_authorized(manifest)
     if output_dir.exists():
         raise ScopeHoundError("output_exists", f"issue package already exists: {output_dir}")
     if not manifest_path.is_file() or manifest_path.is_symlink():

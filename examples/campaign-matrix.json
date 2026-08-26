@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "target": {
+    "name": "replace-with-authorized-target",
+    "repository": "/absolute/path/to/pinned/checkout",
+    "revision": "immutable-commit-or-release-tag",
+    "language": "c"
+  },
+  "authorization": {
+    "status": "authorized",
+    "policy_url": "https://example.invalid/security-policy",
+    "checked_at": "2026-08-26",
+    "eligible_classes": ["memory-corruption"],
+    "notes": "Replace with the policy you personally verified."
+  },
+  "commands": {
+    "build": ["cc", "-g", "-O1", "-fsanitize=address,undefined", "-o", "build/target"],
+    "fuzz": ["./build/target"],
+    "reproduce": ["./build/target", "{artifact}"]
+  },
+  "environment": {
+    "ASAN_OPTIONS": "abort_on_error=1:symbolize=1"
+  },
+  "opportunity": {
+    "bounty_eligibility": 0.8,
+    "attacker_reachability": 0.6,
+    "code_criticality": 0.7,
+    "change_recency": 0.5,
+    "fuzzing_gap": 0.8,
+    "build_reproducibility": 0.8,
+    "duplicate_risk": 0.3
+  },
+  "campaign": {
+    "max_workers": 2,
+    "max_retries": 1,
+    "share_corpus": true,
+    "wall_clock_seconds": 600,
+    "cpu_seconds": 600,
+    "process_limit": 2,
+    "engines": ["standalone", "libfuzzer", "afl++"],
+    "changed_functions": ["parse_input"],
+    "build_variants": [
+      {"name": "asan"},
+      {"name": "ubsan", "environment": {"UBSAN_OPTIONS": "halt_on_error=1"}}
+    ],
+    "oracles": [
+      {"name": "roundtrip", "kind": "roundtrip", "command": ["./tools/roundtrip", "{artifact}"]}
+    ]
+  },
+  "economics": {
+    "expected_reward": 0,
+    "reward_confidence": 0,
+    "cpu_hour_cost": 0
+  }
+}

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Mapping
 
@@ -121,3 +122,16 @@ def run_oracle(
 
 def _render(command: tuple[str, ...], artifact: Path) -> tuple[str, ...]:
     return tuple(argument.replace("{artifact}", str(artifact)) for argument in command)
+
+
+def write_oracle(result: OracleResult, output: Path) -> None:
+    payload = asdict(result)
+    payload["left_command"] = list(result.left_command)
+    payload["right_command"] = list(result.right_command)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    temporary = output.with_name(output.name + ".tmp")
+    try:
+        temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(output)
+    except OSError as error:
+        raise ScopeHoundError("output_failed", f"cannot write oracle output {output}: {error}") from error

@@ -16,6 +16,7 @@ from scopehound.errors import ScopeHoundError
 from scopehound.findings import parse_sanitizer_output
 from scopehound.manifest import BuildVariant, Manifest
 from scopehound.policy import require_authorized
+from scopehound.resource import classify_resource_output
 from scopehound.runner import command_plans, run_plan
 from scopehound.scoring import score_opportunity
 from scopehound.workspace import Workspace
@@ -107,7 +108,12 @@ def run_matrix(
         for job in planned
     ]
     if retry:
-        jobs = [replace(job, attempts=job.attempts + 1) for job in jobs]
+        jobs = [
+            replace(job, attempts=job.attempts + 1)
+            if job.attempts < manifest.campaign.max_retries + 1
+            else replace(job, status="skipped", skipped_reason="retry budget exhausted")
+            for job in jobs
+        ]
     else:
         jobs = [replace(job, attempts=max(1, job.attempts)) for job in jobs]
     started_at = _utc_now()
@@ -185,6 +191,11 @@ def _run_job(
                 timeout_seconds=duration_seconds if stage == "fuzz" else min(duration_seconds, 600),
                 mutates=True,
             ):
+                if variant.environment:
+                    plan = replace(
+                        plan,
+                        environment={**dict(plan.environment), **dict(variant.environment)},
+                    )
                 try:
                     result = run_plan(plan, execute=True, allow_failure=True, backend=backend)
                 except ScopeHoundError as raised:
@@ -223,6 +234,7 @@ def _run_job(
         status = "planned"
     combined = "\n".join(outputs)
     findings = parse_sanitizer_output(combined) if combined else ()
+    resource = classify_resource_output(combined)
     elapsed = round(time.monotonic() - started, 3)
     return replace(
         job,
@@ -230,6 +242,7 @@ def _run_job(
         wall_seconds=elapsed,
         cpu_seconds=elapsed,
         candidate_count=len(findings),
+        resource_kind=resource.kind if resource else None,
         commands=tuple(records),
         error=error,
     )

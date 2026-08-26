@@ -139,6 +139,45 @@ portable baseline when Clang/libFuzzer is unavailable. `libfuzzer` is reported
 as unavailable unless Clang is installed; ScopeHound never silently substitutes
 one engine for another.
 
+## High-throughput candidate prioritization
+
+For authorized local targets, `campaign-matrix` expands the manifest into
+target × build-variant × engine jobs. It uses a bounded worker pool, isolated
+state, stable job digests, explicit unavailable-engine skips, and resumable
+JSON evidence:
+
+```bash
+scopehound campaign-matrix \
+  --manifest campaign-matrix.json \
+  --workspace .scopehound-matrix \
+  --duration 60 \
+  --json
+scopehound campaign-matrix \
+  --manifest campaign-matrix.json \
+  --workspace .scopehound-matrix \
+  --duration 60 \
+  --execute \
+  --retry \
+  --json
+```
+
+Use `scopehound engines --all --json` to see optional AFL++, Honggfuzz, and
+Centipede adapters. An unavailable adapter is recorded as skipped; the tool
+does not install tools or silently replace one engine with another. Seeds and
+dictionaries are hashed and size-bounded, and differential/metamorphic oracles
+are recorded as input/output evidence. An oracle disagreement is not itself a
+memory-safety finding.
+
+The manifest's `economics` fields are researcher-entered prioritization
+metadata. ScopeHound reports candidate rate, replay rate, duplicate rate,
+CPU cost, and an expected-value-per-CPU-hour estimate only when a researcher
+supplies reward metadata. That number is not a bounty prediction, severity
+assessment, or guarantee of profit. Program terms, authorization, root cause,
+duplicates, and impact still require human review.
+
+See [`docs/campaign-matrix.md`](docs/campaign-matrix.md) and the runnable
+[`examples/campaign-matrix.json`](examples/campaign-matrix.json) for the schema.
+
 ## Real-library control validation
 
 The cJSON target pack uses the same reviewed `cJSON_ParseWithLength` harness and

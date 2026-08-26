@@ -39,8 +39,26 @@ class CliTests(unittest.TestCase):
             "analyze",
             "minimize", "known-issues",
             "benchmark",
+            "campaign-matrix", "issue", "oracle",
         ):
             self.assertIn(command, output.getvalue())
+
+    def test_oracle_command_writes_planned_record(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            artifact = root / "input"
+            artifact.write_bytes(b"input")
+            output = root / "oracle.json"
+
+            code, _, _ = self._run(
+                "oracle", "--kind", "differential", "--left", "printf", "same",
+                "--right", "printf", "same", "--artifact", str(artifact),
+                "--cwd", str(root), "--output", str(output), "--json",
+            )
+            payload = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertEqual(code, 0)
+        self.assertEqual(payload["status"], "planned")
 
     def test_validate_supports_text_and_json_output(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

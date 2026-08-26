@@ -27,6 +27,7 @@ from scopehound.manifest import Manifest, load_manifest
 from scopehound.matrix import run_matrix
 from scopehound.minimize import minimize_artifact, write_minimized
 from scopehound.provenance import create_provenance, normalize_stack
+from scopehound.oracles import run_oracle, write_oracle
 from scopehound.reporting import render_report, write_report
 from scopehound.reproduction import load_reproduction, reproduce_finding, write_reproduction
 from scopehound.runner import (
@@ -183,6 +184,18 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--markdown", type=Path)
     _execute_argument(benchmark)
     _json_argument(benchmark)
+
+    oracle = subparsers.add_parser("oracle", help="run a bounded local differential or metamorphic oracle")
+    oracle.add_argument("--kind", choices=("differential", "metamorphic", "roundtrip"), required=True)
+    oracle.add_argument("--left", nargs="+", required=True, help="left command argument array")
+    oracle.add_argument("--right", nargs="+", required=True, help="right command argument array")
+    oracle.add_argument("--artifact", required=True, type=Path)
+    oracle.add_argument("--cwd", required=True, type=Path)
+    oracle.add_argument("--output", required=True, type=Path)
+    oracle.add_argument("--timeout", type=int, default=120)
+    _backend_argument(oracle)
+    _execute_argument(oracle)
+    _json_argument(oracle)
 
     engines = subparsers.add_parser("engines", help="list local fuzz engines and availability")
     engines.add_argument("--all", dest="all_engines", action="store_true", help="include optional adapters")
@@ -354,6 +367,25 @@ def _dispatch(args: argparse.Namespace) -> int:
             "output": str(workspace.matrix_file(state.target)),
         }
         _success(args, payload, f"campaign matrix {state.target}: {len(state.jobs)} jobs -> {payload['output']}")
+        return 0
+
+    if args.command == "oracle":
+        result = run_oracle(
+            args.kind,
+            tuple(args.left),
+            tuple(args.right),
+            args.artifact,
+            args.cwd,
+            execute=args.execute,
+            timeout_seconds=args.timeout,
+            backend=args.backend,
+        )
+        write_oracle(result, args.output)
+        _success(
+            args,
+            {"kind": result.kind, "status": result.status, "input_sha256": result.input_sha256, "output": str(args.output)},
+            f"oracle {result.kind}: {result.status} -> {args.output}",
+        )
         return 0
 
     if args.command == "campaign":
