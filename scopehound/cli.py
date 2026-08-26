@@ -22,6 +22,7 @@ from scopehound.errors import ScopeHoundError
 from scopehound.findings import load_findings, parse_sanitizer_output, write_findings
 from scopehound.discovery import discover_harnesses, write_harnesses
 from scopehound.harness import HarnessCandidate, generate_harnesses, write_harnesses as write_generated_harnesses
+from scopehound.issue import promote_issue
 from scopehound.manifest import Manifest, load_manifest
 from scopehound.matrix import run_matrix
 from scopehound.minimize import minimize_artifact, write_minimized
@@ -254,6 +255,24 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--controls", type=Path)
     report.add_argument("--output", required=True, type=Path)
     _json_argument(report)
+
+    issue = subparsers.add_parser(
+        "issue", help="promote a gated local candidate into an immutable review package"
+    )
+    _manifest_argument(issue)
+    issue.add_argument("--artifact", required=True, type=Path)
+    issue.add_argument("--findings", required=True, type=Path)
+    issue.add_argument("--reproduction", required=True, type=Path)
+    issue.add_argument("--comparison", required=True, type=Path)
+    issue.add_argument("--output-dir", required=True, type=Path)
+    issue.add_argument("--triage", type=Path)
+    issue.add_argument("--minimization", type=Path)
+    issue.add_argument("--coverage", type=Path)
+    issue.add_argument("--campaign", type=Path)
+    issue.add_argument("--controls", type=Path)
+    issue.add_argument("--confirmation", type=Path)
+    issue.add_argument("--economics", type=Path)
+    _json_argument(issue)
 
     bundle = subparsers.add_parser(
         "bundle", help="package a local finding for human review"
@@ -754,6 +773,34 @@ def _dispatch(args: argparse.Namespace) -> int:
             )
         write_report(report, args.output)
         _success(args, {"output": str(args.output), "sha256": artifact.sha256}, f"report draft: {args.output}")
+        return 0
+
+    if args.command == "issue":
+        manifest = load_manifest(args.manifest)
+        package = promote_issue(
+            manifest,
+            args.manifest,
+            args.artifact,
+            args.findings,
+            args.reproduction,
+            args.comparison,
+            args.output_dir,
+            triage_path=args.triage,
+            minimization_path=args.minimization,
+            coverage_path=args.coverage,
+            campaign_path=args.campaign,
+            controls_path=args.controls,
+            confirmation_path=args.confirmation,
+            economics_path=args.economics,
+        )
+        payload = {
+            "status": package.status,
+            "output": str(package.output),
+            "issue_json": str(package.issue_json),
+            "report": str(package.report),
+            "gate": {"status": package.decision.status, "reasons": list(package.decision.reasons)},
+        }
+        _success(args, payload, f"issue package {package.status}: {package.output}")
         return 0
 
     if args.command == "bundle":
