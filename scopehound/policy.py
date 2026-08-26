@@ -20,3 +20,15 @@ def require_authorized(manifest: Manifest) -> None:
             "authorization_required",
             "memory-corruption must be explicitly listed as an eligible class",
         )
+
+
+def require_approved(manifest: Manifest, approval: object, *, required_class: str = "memory-corruption") -> None:
+    """Require legacy manifest authorization plus a current immutable approval record."""
+    from datetime import date
+
+    from scopehound.approval import ApprovalRecord, require_current_approval
+
+    require_authorized(manifest)
+    if not isinstance(approval, ApprovalRecord):
+        raise ScopeHoundError("approval_required", "a valid approval record is required before execution")
+    require_current_approval(manifest, approval, required_class=required_class, now=date.today())

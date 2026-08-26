@@ -53,6 +53,7 @@ class Authorization:
     checked_at: str
     eligible_classes: tuple[str, ...]
     notes: str = ""
+    policy_digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -183,6 +184,7 @@ def validate_manifest(data: object) -> Manifest:
             checked_at=checked_at,
             eligible_classes=eligible_classes,
             notes=_optional_string(authorization_data.get("notes", ""), "authorization.notes"),
+            policy_digest=_optional_digest(authorization_data.get("policy_digest", ""), "authorization.policy_digest"),
         )
 
         commands_data = _mapping(root.get("commands"), "commands")
@@ -392,6 +394,19 @@ def _optional_nonnegative_number(value: object, field: str) -> float | None:
     if value is None:
         return None
     return _nonnegative_number(value, field)
+
+
+def _optional_digest(value: object, field: str) -> str:
+    if value in (None, ""):
+        return ""
+    text = _string(value, field)
+    if len(text) != 64:
+        _invalid(f"{field} must be a SHA-256 hex digest")
+    try:
+        int(text, 16)
+    except ValueError as error:
+        raise ScopeHoundError("manifest_invalid", f"{field} must be hexadecimal") from error
+    return text
 
 
 def _coverage_mode(value: object, field: str) -> str:

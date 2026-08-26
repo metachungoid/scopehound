@@ -9,8 +9,9 @@ from pathlib import Path
 from typing import Mapping
 
 from scopehound.errors import ScopeHoundError
+from scopehound.approval import ApprovalRecord
 from scopehound.manifest import CommandGroup, Manifest
-from scopehound.policy import require_authorized
+from scopehound.policy import require_approved, require_authorized
 from scopehound.runner import command_plans, run_plan
 from scopehound.workspace import Workspace
 
@@ -53,8 +54,12 @@ def create_campaign(
     *,
     engine: str,
     backend: str,
+    approval: ApprovalRecord | None = None,
 ) -> CampaignState:
-    require_authorized(manifest)
+    if approval is None:
+        require_authorized(manifest)
+    else:
+        require_approved(manifest, approval)
     target = manifest.target.name
     target_dir = workspace.target_dir(target)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -113,8 +118,12 @@ def run_stage(
     *,
     execute: bool,
     force: bool = False,
+    approval: ApprovalRecord | None = None,
 ) -> CampaignState:
-    require_authorized(manifest)
+    if approval is None:
+        require_authorized(manifest)
+    else:
+        require_approved(manifest, approval)
     if stage not in _STAGES:
         raise ScopeHoundError("campaign_invalid", f"unknown campaign stage: {stage}")
     if state.target != manifest.target.name or state.manifest_digest != manifest_digest(manifest):
